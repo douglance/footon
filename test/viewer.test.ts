@@ -35,19 +35,25 @@ describe('thread viewer', () => {
     expect(transcript.messages.match(/First chunk\./g)).toHaveLength(1)
     expect(transcript.messages).toContain('First chunk.\n\nSecond chunk.')
   })
+})
 
-  it('marks each model call and keeps tool activity between calls', () => {
+describe('execution history', () => {
+  it('groups tool activity beneath model responses without call labels', () => {
     const transcript = renderTranscript([
       { role: 'assistant', text: 'I will inspect it.' },
-      { role: 'tool', text: 'functions.exec' },
+      { role: 'tool', text: 'functions.exec custom-tool 2 arguments' },
       { role: 'file', text: 'update viewer.ts' },
       { role: 'assistant', text: 'The change is complete.' },
     ])
 
-    expect(transcript.messages).toContain('llm_call 01')
+    expect(transcript.messages).not.toContain('llm_call')
+    expect(transcript.messages).not.toContain('events')
+    expect(transcript.messages).not.toContain('aria-hidden')
+    expect(transcript.messages).not.toContain('response</div>')
+    expect(transcript.messages).toContain('class="activity-run"')
     expect(transcript.messages).toContain('class="message tool"')
-    expect(transcript.messages.indexOf('functions.exec')).toBeLessThan(
-      transcript.messages.indexOf('llm_call 02'),
+    expect(transcript.messages.indexOf('custom-tool 2 arguments')).toBeLessThan(
+      transcript.messages.indexOf('The change is complete.'),
     )
   })
 })

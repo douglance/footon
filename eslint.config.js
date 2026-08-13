@@ -18,5 +18,5 @@ export default tseslint.config(
       'no-console': 'error',
     },
   },
-  { ignores: ['dist', 'coverage', 'worker-configuration.d.ts', 'eslint.config.js'] },
+  { ignores: ['.wrangler', 'dist', 'coverage', 'worker-configuration.d.ts', 'eslint.config.js'] },
 )

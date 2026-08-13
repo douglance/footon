@@ -8,7 +8,7 @@ export async function renderShare(env: Env, id: string): Promise<Response> {
   if (!share) return notFound()
   const transcript = renderTranscript(share.document.messages)
   const redactions = String(share.document.report.redactions)
-  const content = `<article class="viewer"><div class="meta"><p class="prompt">$ footon view --unlisted</p><h1>${escapeHtml(share.title)}</h1><p class="muted">shared ${escapeHtml(formatDate(share.createdAt))} // sanitized locally // ${redactions} redactions</p></div>${transcript.map}<div class="thread">${transcript.messages}</div></article>`
+  const content = `<article class="viewer"><div class="meta"><h1>${escapeHtml(share.title)}</h1><p class="muted">Shared ${escapeHtml(formatDate(share.createdAt))}. Sanitized locally. ${redactions} redactions.</p></div>${transcript.map}<div class="thread">${transcript.messages}</div></article>`
   return htmlResponse(page(share.title, content))
 }
 
@@ -17,23 +17,56 @@ export function renderTranscript(messages: ShareMessage[]): { map: string; messa
   const rendered = renderTimeline(compacted)
   const markers = compacted.map(renderMarker).join('')
   const count = String(compacted.length)
-  const map = `<nav class="minimap" aria-label="Thread minimap"><div class="map-head">map <span>${count}</span></div><ol>${markers}</ol><div class="map-key"><i class="user-key"></i>user <i class="tool-key"></i>tool <i class="file-key"></i>file</div></nav>`
+  const map = `<nav class="minimap" aria-label="Thread minimap"><div class="map-head">map <span>${count}</span></div><ol>${markers}</ol></nav>`
   return { map, messages: rendered }
 }
 
 function renderTimeline(messages: ShareMessage[]): string {
-  let call = 0
-  return messages
-    .map((message, index) => {
-      const boundary = message.role === 'assistant' ? renderCallBoundary((call += 1)) : ''
-      return boundary + renderMessage(message, index)
-    })
-    .join('')
+  let index = 0
+  let output = ''
+  while (index < messages.length) {
+    const message = messages[index]
+    if (!message) break
+    if (message.role === 'assistant') {
+      const end = activityEnd(messages, index + 1)
+      output += renderCall(message, messages.slice(index + 1, end), index)
+      index = end
+      continue
+    }
+    const end = activityEnd(messages, index)
+    if (end > index) {
+      output += renderActivityRun(messages.slice(index, end), index)
+      index = end
+      continue
+    }
+    output += renderMessage(message, index)
+    index += 1
+  }
+  return output
 }
 
-function renderCallBoundary(call: number): string {
-  const label = String(call).padStart(2, '0')
-  return `<div class="call-break" role="separator" aria-label="LLM call ${label}"><span>llm_call ${label}</span></div>`
+function renderCall(message: ShareMessage, activity: ShareMessage[], index: number): string {
+  const body = renderMessage(message, index)
+  const tools = renderActivityRun(activity, index + 1)
+  return `<section class="call-block">${body}${tools}</section>`
+}
+
+function activityEnd(messages: ShareMessage[], start: number): number {
+  let end = start
+  while (messages[end]?.role === 'tool' || messages[end]?.role === 'file') end += 1
+  return end
+}
+
+function renderActivityRun(messages: ShareMessage[], start: number): string {
+  if (messages.length === 0) return ''
+  const rows = messages.map((message, offset) => renderActivity(message, start + offset)).join('')
+  return `<ol class="activity-run" aria-label="Tool and file activity">${rows}</ol>`
+}
+
+function renderActivity(message: ShareMessage, index: number): string {
+  const ordinal = String(index + 1)
+  const position = ordinal.padStart(3, '0')
+  return `<li class="message ${message.role}" id="message-${ordinal}"><div class="role"><span>${position}</span>${message.role}</div><p>${escapeHtml(message.text)}</p></li>`
 }
 
 export function compactMessages(messages: ShareMessage[]): ShareMessage[] {
@@ -54,8 +87,10 @@ export function compactMessages(messages: ShareMessage[]): ShareMessage[] {
 
 function renderMessage(message: ShareMessage, index: number): string {
   const ordinal = String(index + 1)
-  const position = ordinal.padStart(2, '0')
-  return `<section class="message ${message.role}" id="message-${ordinal}"><div class="role"><span>${position}</span>${message.role}</div><p>${escapeHtml(message.text)}</p></section>`
+  const position = ordinal.padStart(3, '0')
+  const label = message.role === 'assistant' ? '' : message.role
+  const accessible = message.role === 'assistant' ? 'assistant' : message.role
+  return `<section class="message ${message.role}" id="message-${ordinal}" aria-label="${accessible} ${ordinal}"><div class="role"><span>${position}</span>${label}</div><p>${escapeHtml(message.text)}</p></section>`
 }
 
 function renderMarker(message: ShareMessage, index: number): string {

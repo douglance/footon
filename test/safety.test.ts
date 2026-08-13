@@ -53,7 +53,7 @@ describe('v2 activity safety', () => {
         title: 'Safe activity',
         approvedAt: '2026-08-13T00:00:00.000Z',
         messages: [
-          { role: 'tool', text: 'functions.exec' },
+          { role: 'tool', text: 'functions.exec custom-tool 2 arguments' },
           { role: 'file', text: 'update viewer.ts' },
         ],
         report: { redactions: 0, detectors: ['footon-secret-patterns'] },

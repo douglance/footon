@@ -62,3 +62,14 @@ fn removes_embedded_system_reminders_but_preserves_code_fences() {
     assert!(!text.contains("private policy"));
     assert!(text.contains("```sh\necho safe\n```"));
 }
+
+#[test]
+fn preserves_neutered_tool_and_file_labels() {
+    let messages = vec![
+        Message::new(Role::Tool, "functions.exec"),
+        Message::new(Role::File, "update viewer.ts"),
+    ];
+
+    let result = sanitize_messages(&messages).unwrap();
+    assert_eq!(result.messages, messages);
+}

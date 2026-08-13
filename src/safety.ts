@@ -76,7 +76,10 @@ function validRole(value: unknown, schema: InspectedRoot['schemaVersion']): bool
 }
 
 function validActivity(role: unknown, text: string): boolean {
-  if (role === 'tool') return /^[A-Za-z0-9_.:-]{1,80}$/u.test(text)
+  if (role === 'tool')
+    return /^[A-Za-z0-9_.:@][A-Za-z0-9_.:@-]*(?: [A-Za-z0-9_.:@][A-Za-z0-9_.:@-]*){0,7}$/u.test(
+      text,
+    )
   if (role === 'file') return /^(?:add|update|delete) [A-Za-z0-9][A-Za-z0-9._-]{0,119}$/u.test(text)
   return true
 }

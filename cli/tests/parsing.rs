@@ -31,7 +31,7 @@ fn codex_keeps_messages_and_safe_tool_names() {
         "\n",
         r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"question"}]}}"#,
         "\n",
-        r#"{"type":"response_item","payload":{"type":"function_call","name":"functions.exec","arguments":"{\"patch\":\"*** Update File: /Users/private/project/src/viewer.ts\"}"}}"#,
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"functions.exec","arguments":"{\"cmd\":\"npm run check --token secret\",\"patch\":\"*** Update File: /Users/private/project/src/viewer.ts\"}"}}"#,
         "\n",
         r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"const patch = \"*** Begin Patch\\n*** Add File: /Users/private/project/src/history.ts\\n*** End Patch\";"}}"#,
         "\n",
@@ -43,7 +43,7 @@ fn codex_keeps_messages_and_safe_tool_names() {
         messages,
         vec![
             Message::new(Role::User, "question"),
-            Message::new(Role::Tool, "functions.exec"),
+            Message::new(Role::Tool, "functions.exec npm 4 arguments"),
             Message::new(Role::File, "update viewer.ts"),
             Message::new(Role::Tool, "exec"),
             Message::new(Role::File, "add history.ts"),
@@ -59,4 +59,48 @@ fn auto_detects_both_sources_and_ignores_invalid_lines() {
 
     assert_eq!(parse_jsonl(claude, Source::Auto).unwrap().len(), 1);
     assert_eq!(parse_jsonl(codex, Source::Auto).unwrap().len(), 1);
+}
+
+#[test]
+fn tool_summaries_never_keep_arbitrary_arguments() {
+    let input = concat!(
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"functions.exec","arguments":"{\"cmd\":\"echo private-value\"}"}}"#,
+        "\n",
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"functions.exec","arguments":"{\"cmd\":\"git status --short\"}"}}"#,
+    );
+
+    assert_eq!(
+        parse_jsonl(input, Source::Codex).unwrap(),
+        vec![
+            Message::new(Role::Tool, "functions.exec echo 1 argument"),
+            Message::new(Role::Tool, "functions.exec git 2 arguments"),
+        ]
+    );
+}
+
+#[test]
+fn extracts_safe_intent_from_typed_execution_wrapper() {
+    let input = r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"const r = await tools.exec_command({cmd:\"apoc execution command --purpose 'Check it.' -- npm run check --token private\",workdir:\"/Users/private/project\"});"}}"#;
+
+    assert_eq!(
+        parse_jsonl(input, Source::Codex).unwrap(),
+        vec![Message::new(Role::Tool, "exec npm 4 arguments")]
+    );
+}
+
+#[test]
+fn summarizes_every_program_with_the_same_rule() {
+    let input = concat!(
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{\"cmd\":\"apoc code run --code private\"}"}}"#,
+        "\n",
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{\"cmd\":\"for item in private\"}"}}"#,
+    );
+
+    assert_eq!(
+        parse_jsonl(input, Source::Codex).unwrap(),
+        vec![
+            Message::new(Role::Tool, "exec apoc 4 arguments"),
+            Message::new(Role::Tool, "exec for 3 arguments"),
+        ]
+    );
 }

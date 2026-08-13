@@ -48,6 +48,13 @@ fn sanitize_message(
 ) -> Result<Message> {
     let (without_tags, tags) = strip_privileged_tags(&message.text);
     let (secrets_removed, secrets) = scanner::redact(&without_tags)?;
+    if matches!(
+        message.role,
+        crate::model::Role::Tool | crate::model::Role::File
+    ) {
+        *total += tags + secrets;
+        return Ok(Message::new(message.role, secrets_removed));
+    }
     let pii = engine
         .anonymize(
             &secrets_removed,
