@@ -63,7 +63,7 @@ label { display: block; margin-bottom: 5px; color: var(--green); font-weight: 70
 input { width: 100%; margin-bottom: 12px; padding: 8px; border: 1px solid #4b5b50; border-radius: 0; background: var(--bg); color: var(--ink); font: inherit; }
 code, pre { font-family: inherit; }
 pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; border: 1px solid var(--line); background: var(--panel); color: #c8d2ca; }
-.viewer { position: relative; padding-right: 64px; }
+.viewer { position: relative; padding-right: 52px; }
 .meta { margin-bottom: 7px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 .thread { border-top: 1px solid var(--line); }
 .call-block { margin: 0; border-bottom: 1px solid var(--line); }
@@ -100,8 +100,8 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; bord
 .minimap {
   position: fixed;
   inset-block: 0;
-  width: 48px;
-  margin-left: min(992px, calc(100vw - 84px));
+  width: 36px;
+  margin-left: min(1004px, calc(100vw - 72px));
   border-left: 1px solid var(--line);
   font-size: 9px;
 }
@@ -115,6 +115,8 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; bord
 .map-marker.file { background: rgba(198, 164, 239, .55); }
 .map-marker:hover, .map-marker:focus-visible { filter: brightness(1.25); }
 a:hover { color: #a3f6c1; }
+.minimap canvas { position: absolute; z-index: 3; inset: 0; display: block; width: 100%; height: 100%; cursor: pointer; }
+.minimap.enhanced ol, .minimap.enhanced .map-viewport { visibility: hidden; pointer-events: none; }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 @media (max-width: 720px) {
   body { padding-inline: 12px; }
@@ -122,7 +124,7 @@ a:hover { color: #a3f6c1; }
   header span:not(.status) { display: none; }
   main { padding-top: 16px; }
   .facts { grid-template-columns: 1fr; }
-  .viewer { padding-right: 24px; }
+  .viewer { padding-right: 20px; }
   h1 { font-size: 21px; line-height: 1.22; }
   .message { grid-template-columns: 72px minmax(0, 1fr); padding-right: 4px; }
   .message p { font-size: 12.5px; line-height: 1.42; }
@@ -131,7 +133,7 @@ a:hover { color: #a3f6c1; }
   .activity-run { margin-left: 0; padding-left: 0; }
   .message.tool, .message.file { grid-template-columns: 72px minmax(0, 1fr); }
   .message.tool p, .message.file p { font-size: 10.5px; }
-  .minimap { right: 5px; width: 10px; margin-left: 0; }
+  .minimap { right: 5px; width: 8px; margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 `

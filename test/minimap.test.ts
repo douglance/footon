@@ -3,17 +3,27 @@ import { MINIMAP_JS, renderMinimapScript } from '../src/web/minimap.js'
 import { htmlResponse, page } from '../src/web/security.js'
 
 describe('visible message range', () => {
-  it('scales each marker to its rendered message geometry', () => {
+  it('builds one proportional offscreen texture from rendered messages', () => {
     expect(MINIMAP_JS).toContain('map.clientHeight / documentHeight')
     expect(MINIMAP_JS).toContain('message.getBoundingClientRect().top + window.scrollY')
     expect(MINIMAP_JS).toContain('message.offsetHeight * scale')
+    expect(MINIMAP_JS).toContain("document.createElement('canvas')")
+    expect(MINIMAP_JS).toContain('textureContext.fillRect(1, top * scale')
   })
 
-  it('moves one viewport rectangle with the visible document range', () => {
-    expect(MINIMAP_JS).toContain('window.innerHeight * scale')
-    expect(MINIMAP_JS).toContain("'translateY(' + window.scrollY * scale + 'px)'")
+  it('magnifies the visible range with frame-synchronized exponential easing', () => {
+    expect(MINIMAP_JS).toContain('sourceHeight * 4.4')
+    expect(MINIMAP_JS).toContain('1 - Math.exp(-elapsed / 72)')
+    expect(MINIMAP_JS).toContain('drawSlice(area.sourceTop, area.sourceHeight')
     expect(MINIMAP_JS).toContain('requestAnimationFrame')
     expect(MINIMAP_JS).not.toContain('IntersectionObserver')
+    expect(MINIMAP_JS).not.toContain('marker.parentElement.style')
+  })
+
+  it('supports pointer and keyboard navigation with reduced motion', () => {
+    expect(MINIMAP_JS).toContain("canvas.addEventListener('pointerdown'")
+    expect(MINIMAP_JS).toContain("canvas.addEventListener('keydown'")
+    expect(MINIMAP_JS).toContain("matchMedia('(prefers-reduced-motion: reduce)')")
   })
 
   it('serves the observer as a self-hosted script', async () => {
