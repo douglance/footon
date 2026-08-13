@@ -10,6 +10,7 @@ describe('thread viewer', () => {
     ])
 
     expect(transcript.map.match(/class="map-marker/g)).toHaveLength(3)
+    expect(transcript.map).toContain('class="map-viewport"')
     expect(transcript.map.match(/class="map-marker user"/g)).toHaveLength(2)
     expect(transcript.map).not.toContain('map-head')
     expect(transcript.map).not.toContain('<span>3</span>')

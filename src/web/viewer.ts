@@ -8,7 +8,7 @@ export async function renderShare(env: Env, id: string): Promise<Response> {
   if (!share) return notFound()
   const transcript = renderTranscript(share.document.messages)
   const redactions = String(share.document.report.redactions)
-  const content = `<article class="viewer"><div class="meta"><h1>${escapeHtml(share.title)}</h1><p class="muted">Shared ${escapeHtml(formatDate(share.createdAt))}. Sanitized locally. ${redactions} redactions.</p></div>${transcript.map}<div class="thread">${transcript.messages}</div></article><script src="/viewer.js?v=1" defer></script>`
+  const content = `<article class="viewer"><div class="meta"><h1>${escapeHtml(share.title)}</h1><p class="muted">Shared ${escapeHtml(formatDate(share.createdAt))}. Sanitized locally. ${redactions} redactions.</p></div>${transcript.map}<div class="thread">${transcript.messages}</div></article><script src="/viewer.js?v=2" defer></script>`
   return htmlResponse(page(share.title, content))
 }
 
@@ -16,7 +16,7 @@ export function renderTranscript(messages: ShareMessage[]): { map: string; messa
   const compacted = compactMessages(messages)
   const rendered = renderTimeline(compacted)
   const markers = compacted.map(renderMarker).join('')
-  const map = `<nav class="minimap" aria-label="Thread minimap"><ol>${markers}</ol></nav>`
+  const map = `<nav class="minimap" aria-label="Thread minimap"><div class="map-viewport" aria-hidden="true"></div><ol>${markers}</ol></nav>`
   return { map, messages: rendered }
 }
 

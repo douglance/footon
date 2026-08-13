@@ -3,10 +3,17 @@ import { MINIMAP_JS, renderMinimapScript } from '../src/web/minimap.js'
 import { htmlResponse, page } from '../src/web/security.js'
 
 describe('visible message range', () => {
-  it('observes message elements and toggles matching active markers', () => {
-    expect(MINIMAP_JS).toContain('new IntersectionObserver')
-    expect(MINIMAP_JS).toContain("marker.classList.toggle('active', entry.isIntersecting)")
-    expect(MINIMAP_JS).toContain('observer.observe(message)')
+  it('scales each marker to its rendered message geometry', () => {
+    expect(MINIMAP_JS).toContain('map.clientHeight / documentHeight')
+    expect(MINIMAP_JS).toContain('message.getBoundingClientRect().top + window.scrollY')
+    expect(MINIMAP_JS).toContain('message.offsetHeight * scale')
+  })
+
+  it('moves one viewport rectangle with the visible document range', () => {
+    expect(MINIMAP_JS).toContain('window.innerHeight * scale')
+    expect(MINIMAP_JS).toContain("'translateY(' + window.scrollY * scale + 'px)'")
+    expect(MINIMAP_JS).toContain('requestAnimationFrame')
+    expect(MINIMAP_JS).not.toContain('IntersectionObserver')
   })
 
   it('serves the observer as a self-hosted script', async () => {

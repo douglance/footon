@@ -102,19 +102,18 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; bord
   inset-block: 0;
   width: 96px;
   margin-left: min(944px, calc(100vw - 132px));
-  padding-left: 10px;
   border-left: 1px solid var(--line);
   font-size: 9px;
 }
-.minimap ol { display: flex; flex-direction: column; height: 100vh; margin: 0; padding: 0 3px 0 0; list-style: none; }
-.minimap li { flex: 1 1 1px; min-height: 1px; max-height: 9px; }
-.map-marker { display: block; width: 28px; height: 100%; min-height: 1px; border-top: 1px solid #425047; text-decoration: none; }
-.map-marker.user { width: 76px; min-height: 2px; border-color: var(--green); }
+.minimap ol { position: relative; z-index: 1; height: 100vh; margin: 0; padding: 0; list-style: none; }
+.minimap li { position: absolute; inset-inline: 0; min-height: 1px; }
+.map-viewport { position: absolute; z-index: 0; inset-inline: 0; top: 0; background: rgba(114, 227, 159, .18); pointer-events: none; }
+.map-marker { display: block; width: 100%; height: 100%; min-height: 1px; border-top: 1px solid #425047; text-decoration: none; }
+.map-marker.user { border-color: var(--green); }
 .map-marker.assistant { border-color: var(--amber); opacity: .72; }
 .map-marker.tool { border-color: #68cce8; }
 .map-marker.file { border-color: #c6a4ef; }
-.map-marker.active { width: 76px; border-color: var(--green); background: rgba(114, 227, 159, .32); opacity: 1; }
-.map-marker:hover, .map-marker:focus-visible { width: 76px; opacity: 1; }
+.map-marker:hover, .map-marker:focus-visible { opacity: 1; }
 a:hover { color: #a3f6c1; }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 @media (max-width: 720px) {
@@ -132,9 +131,7 @@ a:hover { color: #a3f6c1; }
   .activity-run { margin-left: 0; padding-left: 0; }
   .message.tool, .message.file { grid-template-columns: 72px minmax(0, 1fr); }
   .message.tool p, .message.file p { font-size: 10.5px; }
-  .minimap { right: 5px; width: 23px; margin-left: 0; padding-left: 5px; }
-  .map-marker { width: 8px; }
-  .map-marker.user, .map-marker.active, .map-marker:hover, .map-marker:focus-visible { width: 17px; }
+  .minimap { right: 5px; width: 18px; margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 `

@@ -23,5 +23,5 @@ export function escapeHtml(value: string): string {
 }
 
 export function page(title: string, content: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · footon</title><link rel="stylesheet" href="/style.css?v=6"></head><body><header><a class="brand" href="/">footon</a><span>safe agent threads</span><span class="status">safe</span></header><main>${content}</main></body></html>`
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · footon</title><link rel="stylesheet" href="/style.css?v=7"></head><body><header><a class="brand" href="/">footon</a><span>safe agent threads</span><span class="status">safe</span></header><main>${content}</main></body></html>`
 }
