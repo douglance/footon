@@ -7,7 +7,7 @@ export function renderHome(): Response {
 }
 
 export function renderInstall(): Response {
-  const content = `<h1>Install the CLI</h1><p class="lede">Build the Rust client from this checkout, then keep raw transcripts local.</p><pre><code>cargo install --path cli
+  const content = `<h1>Install the CLI</h1><p class="lede">Install the Rust client, then keep raw transcripts local.</p><pre><code>cargo install --git https://github.com/douglance/footon footon
 footon draft thread.jsonl --title "Public title" --output footon-draft.json
 FOOTON_TOKEN=... footon publish footon-draft.json</code></pre><p>Drafting never uses the network. Publishing is a separate, explicit command.</p>`
   return htmlResponse(page('Install', content))

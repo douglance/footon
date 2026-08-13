@@ -15,7 +15,7 @@ passwordless email sign-in and exposes only `share_create`, `share_list`, and
 ## CLI
 
 ```sh
-cargo install --path cli
+cargo install --git https://github.com/douglance/footon footon
 footon draft thread.jsonl --title "Public title" --output footon-draft.json
 FOOTON_TOKEN=... footon publish footon-draft.json
 ```
@@ -29,9 +29,9 @@ full contract.
 ```sh
 npm install
 npm run check
-cargo fmt --manifest-path cli/Cargo.toml --check
-cargo clippy --manifest-path cli/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path cli/Cargo.toml
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
 ```
 
 The Worker limits complexity to 8, functions to 45 lines, and files to 220
