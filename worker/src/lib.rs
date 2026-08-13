@@ -1397,9 +1397,19 @@ mod tests {
         assert!(html.contains("<div class=\"thread\">"));
         assert!(html.contains("<section class=\"call-block\">"));
         assert!(html.contains("class=\"message assistant\""));
-        assert!(
-            html.contains("<span class=\"ordinal\">001</span><span class=\"role\">AGENT</span>")
-        );
+        assert!(html.contains(
+            "<a class=\"ordinal\" href=\"#message-1\" aria-label=\"Link to message 1\">001</a><span class=\"role\">AGENT</span>"
+        ));
+        assert!(html.contains("id=\"filter-user\""));
+        assert!(html.contains("id=\"filter-agent\""));
+        assert!(html.contains("id=\"filter-tools\""));
+        assert!(html.contains("class=\"filter-toggle user\""));
+        assert!(html.contains("class=\"filter-toggle assistant\""));
+        assert!(html.contains("class=\"filter-toggle tool\""));
+        assert!(html.contains("class=\"view-icon rendered-icon\""));
+        assert!(html.contains("class=\"view-icon text-icon\""));
+        assert!(!html.contains(">Rendered<"));
+        assert!(!html.contains(">Text<"));
         assert!(html.contains("AGENT"));
         assert!(html.contains("<strong>Done.</strong>"));
         assert!(!html.contains("shadow-sm"));
@@ -1407,6 +1417,7 @@ mod tests {
         let theme = include_str!("theme.css");
         assert!(theme.contains("grid-template-columns: 44px 72px minmax(0, 1fr)"));
         assert!(theme.contains("color-scheme: dark"));
+        assert!(theme.contains("[hidden] { display: none !important; }"));
         assert!(!theme.contains(".message.user"));
         assert!(
             theme

@@ -58,6 +58,30 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; back
 }
 .meta h1 { margin: 0 0 2px; font-size: 18px; line-height: 1.2; letter-spacing: -.015em; }
 .meta p { margin: 0; color: var(--muted); font-size: 10.5px; line-height: 1.35; }
+.toolbar, .role-filters { display: flex; align-items: center; }
+.toolbar { gap: 12px; }
+.role-filters { gap: 7px; }
+.filter-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.filter-toggle {
+  color: var(--muted);
+  font-size: 8.5px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+.filter-toggle.user { color: var(--green); }
+.filter-toggle.assistant { color: var(--amber); }
+.filter-toggle.tool { color: #68cce8; }
+.filter-input:not(:checked) + .filter-toggle { opacity: .28; text-decoration: line-through; }
+.filter-input:focus-visible + .filter-toggle { outline: 2px solid var(--amber); outline-offset: 2px; }
 .view-control {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -71,7 +95,8 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; back
   line-height: 1;
   cursor: pointer;
 }
-.view-control span { padding: 4px 6px; }
+.view-control span { padding: 3px 5px; }
+.view-icon svg { display: block; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.4; }
 .view-control span:first-child { background: var(--line); color: var(--ink); }
 .thread-view-toggle {
   position: absolute;
@@ -88,6 +113,7 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; back
 .thread-view-toggle:checked + .meta .view-control span:last-child { background: var(--line); color: var(--ink); }
 .thread-view-toggle:checked ~ .thread .rendered { display: none; }
 .thread-view-toggle:checked ~ .thread .message-text { display: block; }
+[hidden] { display: none !important; }
 .thread { margin: 0; }
 .call-block { margin: 0; }
 .message {
@@ -162,6 +188,7 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; back
   font-size: 9px;
   font-weight: 500;
   letter-spacing: .06em;
+  text-decoration: none;
 }
 .message.assistant .role { color: var(--amber); }
 .activity-run { margin: 0 0 5px; padding: 1px 0 2px; list-style: none; }
