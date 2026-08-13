@@ -12,6 +12,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
+    "test:e2e": "vitest run test/e2e",
     "types": "wrangler types"
   },
   "dependencies": {
@@ -19,14 +20,15 @@
     "postal-mime": "3.0.0"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.21.2",
     "@cloudflare/workers-types": "5.20260813.1",
-    "@types/node": "^24.2.1",
     "@eslint/js": "^9.33.0",
+    "@types/node": "^24.2.1",
     "eslint": "^9.33.0",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.39.1",
-    "vitest": "^3.2.4",
+    "vitest": "^4.1.10",
     "wrangler": "^4.122.0"
   }
 }

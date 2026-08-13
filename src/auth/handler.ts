@@ -1,14 +1,17 @@
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider'
 import { hashToken, normalizeEmail, randomToken } from './crypto.js'
 import { sendMagicLink } from './email.js'
+import { authorizationIdentity } from './identity.js'
 import { consentPage, loginPage, messagePage } from './pages.js'
 import {
   consumeMagicLink,
   createSession,
   deletePending,
+  authenticatePending,
   issueMagicLink,
   loadPending,
   readSession,
+  readPendingIdentity,
   savePending,
   sessionCookie,
 } from './store.js'
@@ -41,8 +44,11 @@ async function authorizeGet(request: Request, env: Env): Promise<Response> {
   if (!oauth)
     return messagePage('Invalid request', 'The authorization request is invalid or expired.', 400)
   const pendingId = resume ?? (await savePending(env.DB, oauth))
-  const session = await readSession(env.DB, request)
-  if (!session) return loginPage(env, pendingId)
+  const [session, verified] = await Promise.all([
+    readSession(env.DB, request),
+    readPendingIdentity(env.DB, pendingId),
+  ])
+  if (!authorizationIdentity(session, verified)) return loginPage(env, pendingId)
   return showConsent(env, pendingId, oauth)
 }
 
@@ -53,17 +59,19 @@ async function authorizePost(request: Request, env: Env): Promise<Response> {
   if (!pendingId || !csrf || csrf !== cookie(request, '__Host-footon_csrf')) {
     return messagePage('Request expired', 'Start the connection again.', 400)
   }
-  const [oauth, session] = await Promise.all([
+  const [oauth, session, verified] = await Promise.all([
     loadPending(env.DB, pendingId),
     readSession(env.DB, request),
+    readPendingIdentity(env.DB, pendingId),
   ])
-  if (!oauth || !session) return messagePage('Request expired', 'Sign in and try again.', 401)
+  const identity = authorizationIdentity(session, verified)
+  if (!oauth || !identity) return messagePage('Request expired', 'Sign in and try again.', 401)
   const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
     request: oauth,
-    userId: session.userId,
+    userId: identity.userId,
     metadata: {},
     scope: oauth.scope.filter((scope) => scope === 'shares:read' || scope === 'shares:write'),
-    props: session,
+    props: identity,
   })
   await deletePending(env.DB, pendingId)
   return Response.redirect(redirectTo, 302)
@@ -93,6 +101,7 @@ async function verifyLink(request: Request, env: Env): Promise<Response> {
   const token = new URL(request.url).searchParams.get('token')
   const magic = token ? await consumeMagicLink(env.DB, token) : null
   if (!magic) return messagePage('Link expired', 'Request a new sign-in link.', 400)
+  await authenticatePending(env.DB, magic.pendingId, magic.email)
   const session = await createSession(env.DB, magic.email)
   return new Response(null, {
     status: 302,

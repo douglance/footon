@@ -1,5 +1,6 @@
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider'
 import { hashToken, randomToken, userId } from './crypto.js'
+import type { AuthorizationIdentity } from './identity.js'
 
 export async function savePending(db: D1Database, request: AuthRequest): Promise<string> {
   const id = randomToken(18)
@@ -19,17 +20,47 @@ export async function loadPending(db: D1Database, id: string): Promise<AuthReque
 }
 
 export async function deletePending(db: D1Database, id: string): Promise<void> {
-  await db.prepare('DELETE FROM oauth_pending WHERE id = ?').bind(id).run()
+  await db.batch([
+    db.prepare('DELETE FROM authenticated_pending WHERE pending_id = ?').bind(id),
+    db.prepare('DELETE FROM oauth_pending WHERE id = ?').bind(id),
+  ])
 }
 
 export async function deleteExpiredAuth(db: D1Database): Promise<void> {
   const timestamp = now()
   await db.batch([
     db.prepare('DELETE FROM oauth_pending WHERE expires_at <= ?').bind(timestamp),
+    db.prepare('DELETE FROM authenticated_pending WHERE expires_at <= ?').bind(timestamp),
     db.prepare('DELETE FROM magic_links WHERE expires_at <= ?').bind(timestamp),
     db.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(timestamp),
     db.prepare("DELETE FROM auth_attempts WHERE created_at <= datetime('now', '-1 day')").bind(),
   ])
+}
+
+export async function authenticatePending(
+  db: D1Database,
+  pendingId: string,
+  email: string,
+): Promise<void> {
+  await db
+    .prepare(
+      'INSERT OR REPLACE INTO authenticated_pending (pending_id, user_id, email, expires_at) VALUES (?, ?, ?, ?)',
+    )
+    .bind(pendingId, await userId(email), email, expires(10))
+    .run()
+}
+
+export async function readPendingIdentity(
+  db: D1Database,
+  pendingId: string,
+): Promise<AuthorizationIdentity | null> {
+  const row = await db
+    .prepare(
+      'SELECT user_id, email FROM authenticated_pending WHERE pending_id = ? AND expires_at > ?',
+    )
+    .bind(pendingId, now())
+    .first<{ user_id: string; email: string }>()
+  return row ? { userId: row.user_id, email: row.email } : null
 }
 
 export async function issueMagicLink(
