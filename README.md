@@ -31,13 +31,13 @@ npm install
 npm run check
 npm run test:e2e
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-The Worker limits complexity to 8, functions to 45 lines, and files to 220
-lines. The Rust crate denies Clippy `all`, `pedantic`, cognitive complexity,
-large functions, warnings, and unsafe code.
+`npm run check` runs strict TypeScript and Rust linting. The Worker limits
+complexity to 8, functions to 45 lines, and files to 220 lines. The Rust crate
+denies Clippy `all`, `pedantic`, cognitive complexity, large functions,
+warnings, and unsafe code across the workspace, all targets, and all features.
 
 The Worker E2E uses Cloudflare's local test harness with isolated D1, KV, and
 simulated email. It covers dynamic client registration, PKCE authorization,

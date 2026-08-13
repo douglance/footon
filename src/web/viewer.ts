@@ -19,9 +19,19 @@ export async function renderShare(env: Env, id: string): Promise<Response> {
   const share = await getShare(env.DB, id)
   if (!share) return notFound()
   const transcript = renderTranscript(share.document.messages)
-  const redactions = String(share.document.report.redactions)
-  const content = `<article class="viewer"><div class="meta"><h1>${escapeHtml(share.title)}</h1><p class="muted">Shared ${escapeHtml(formatDate(share.createdAt))}. Sanitized locally. ${redactions} redactions.</p></div>${transcript.map}<div class="thread">${transcript.messages}</div></article><script src="/viewer.js?v=4" defer></script>`
+  const header = renderDocumentHeader(
+    share.title,
+    share.createdAt,
+    share.document.report.redactions,
+  )
+  const content = `<article class="viewer">${header}${transcript.map}<div class="thread">${transcript.messages}</div></article><script src="/viewer.js?v=5" defer></script>`
   return htmlResponse(page(share.title, content))
+}
+
+export function renderDocumentHeader(title: string, createdAt: string, redactions: number): string {
+  const date = escapeHtml(formatDate(createdAt))
+  const count = escapeHtml(String(redactions))
+  return `<input class="thread-view-toggle" id="thread-view" type="checkbox" aria-label="Show source text for all messages"><div class="meta"><div class="document-heading"><h1>${escapeHtml(title)}</h1><p>Shared ${date}. ${count} redactions.</p></div><label class="view-control" for="thread-view"><span>Rendered</span><span>Text</span></label></div>`
 }
 
 export function renderTranscript(messages: ShareMessage[]): { map: string; messages: string } {
@@ -107,7 +117,7 @@ function renderMessage(message: ShareMessage, index: number): string {
   const position = ordinal.padStart(3, '0')
   const label = message.role === 'assistant' ? 'AGENT' : message.role
   const accessible = message.role === 'assistant' ? 'agent' : message.role
-  return `<section class="message ${message.role}" id="message-${ordinal}" aria-label="${accessible} ${ordinal}"><div class="role"><span>${position}</span>${label}</div>${renderProse(message, ordinal)}</section>`
+  return `<section class="message ${message.role}" id="message-${ordinal}" aria-label="${accessible} ${ordinal}"><div class="role"><span>${position}</span>${label}</div>${renderProse(message)}</section>`
 }
 
 function renderMarker(message: ShareMessage, index: number): string {
@@ -136,13 +146,12 @@ function notFound(): Response {
   )
 }
 
-function renderProse(message: ShareMessage, ordinal: string): string {
+function renderProse(message: ShareMessage): string {
   const plain = `<pre class="message-text">${escapeHtml(message.text)}</pre>`
   const rendered = renderProseMarkdown(message.text)
-  if (!rendered.ok) return `<div class="message-body">${plain}</div>`
-  const id = `message-view-${ordinal}`
-  const role = message.role === 'assistant' ? 'agent' : message.role
-  return `<div class="message-body"><input class="view-toggle" id="${id}" type="checkbox" aria-label="Show source text for ${role} message ${ordinal}"><label class="render-toggle" for="${id}"><span>Rendered</span><span> | </span><span>Text</span></label><div class="rendered">${rendered.html}</div>${plain}</div>`
+  if (!rendered.ok)
+    return `<div class="message-body"><pre class="message-text fallback">${escapeHtml(message.text)}</pre></div>`
+  return `<div class="message-body"><div class="rendered">${rendered.html}</div>${plain}</div>`
 }
 
 export function renderProseMarkdown(

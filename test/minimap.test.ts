@@ -43,6 +43,8 @@ describe('page shell', () => {
     const body = await response.text()
 
     expect(contentPolicy).toContain("script-src 'self'")
+    expect(body).not.toContain('safe agent threads')
+    expect(body).not.toContain('class="status"')
     expect(body).not.toContain('Raw thread stays local')
     expect(body).not.toContain('Not uploaded')
     expect(body).not.toContain('<footer>')

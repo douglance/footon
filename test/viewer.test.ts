@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { renderProseMarkdown, renderTranscript } from '../src/web/viewer.js'
+import { renderDocumentHeader, renderProseMarkdown, renderTranscript } from '../src/web/viewer.js'
 
 describe('thread viewer basics', () => {
   it('renders every message in the minimap and emphasizes user jumps', () => {
@@ -55,8 +55,8 @@ describe('thread viewer Markdown', () => {
       },
     ])
 
-    expect(transcript.messages).toContain('class="render-toggle"')
-    expect(transcript.messages.match(/class="view-toggle"/g)).toHaveLength(1)
+    expect(transcript.messages).not.toContain('class="view-control"')
+    expect(transcript.messages).not.toContain('class="thread-view-toggle"')
     expect(transcript.messages).toContain('<h2>Title</h2>')
     expect(transcript.messages).toContain('<a href="https://example.com">safe</a>')
     expect(transcript.messages).not.toContain('href="javascript:alert(1)"')
@@ -72,7 +72,7 @@ describe('thread viewer Markdown', () => {
       { role: 'file', text: 'update viewer.ts' },
     ])
 
-    expect(transcript.messages).not.toContain('class="render-toggle"')
+    expect(transcript.messages).not.toContain('class="view-control"')
     expect(transcript.messages).toContain('**exec** &lt;b&gt;raw&lt;/b&gt;')
     expect(transcript.messages).not.toContain('<strong>exec</strong>')
   })
@@ -146,7 +146,19 @@ describe('thread viewer scale', () => {
     expect(transcript.map.match(/class="map-marker/g)).toHaveLength(2_000)
     expect(transcript.map.match(/<a class="map-marker user"/g)).toHaveLength(1_000)
     expect(transcript.map.match(/<span class="map-marker assistant"/g)).toHaveLength(1_000)
-    expect(transcript.messages.match(/class="view-toggle"/g)).toHaveLength(2_000)
+    expect(transcript.messages).not.toContain('class="thread-view-toggle"')
+  })
+})
+
+describe('thread document header', () => {
+  it('renders one global view control with compact metadata', () => {
+    const header = renderDocumentHeader('Build history', '2026-08-13T00:00:00.000Z', 61)
+
+    expect(header.match(/class="thread-view-toggle"/g)).toHaveLength(1)
+    expect(header).toContain('aria-label="Show source text for all messages"')
+    expect(header).toContain('<span>Rendered</span><span>Text</span>')
+    expect(header).toContain('Shared August 13, 2026. 61 redactions.')
+    expect(header).not.toContain('Sanitized locally')
   })
 })
 

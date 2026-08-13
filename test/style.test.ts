@@ -18,3 +18,16 @@ describe('minimap styling', () => {
     expect(CSS).not.toContain('.map-marker.user { border-color:')
   })
 })
+
+describe('document controls', () => {
+  it('pins one compact global rendered-text switch', () => {
+    expect(CSS).toContain('position: sticky;')
+    expect(CSS).toContain('grid-template-columns: minmax(0, 1fr) auto;')
+    expect(CSS).toContain('.thread-view-toggle:checked ~ .thread .rendered { display: none; }')
+    expect(CSS).toContain('.thread-view-toggle:checked ~ .thread .message-text { display: block; }')
+    expect(CSS).toContain(
+      '.message-body .message-text { overflow-wrap: anywhere; white-space: pre-wrap; }',
+    )
+    expect(CSS).not.toContain('.render-toggle')
+  })
+})
