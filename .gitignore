@@ -1,0 +1,10 @@
+node_modules/
+target/
+.wrangler/
+dist/
+coverage/
+.dev.vars
+*.pem
+*.key
+models/
+artifacts/

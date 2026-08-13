@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "footon",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-12",
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "routes": [{ "pattern": "footon.dev", "custom_domain": true }],
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "d5c4444c50af47a48738b747074b4714" }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "footon",
+      "database_id": "6a2b3e9a-df44-45c6-853f-a9df34670cfd",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "send_email": [{ "name": "EMAIL" }],
+  "vars": { "TURNSTILE_SITE_KEY": "0x4AAAAAAEOkcvkFZbXS5eQQ" },
+  "triggers": { "crons": ["17 3 * * *"] },
+}

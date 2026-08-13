@@ -1,0 +1,32 @@
+{
+  "name": "footon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "check": "npm run format:check && npm run lint && npm run build && npm test",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run",
+    "types": "wrangler types"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "0.10.3",
+    "postal-mime": "3.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260813.1",
+    "@types/node": "^24.2.1",
+    "@eslint/js": "^9.33.0",
+    "eslint": "^9.33.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.39.1",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.122.0"
+  }
+}
