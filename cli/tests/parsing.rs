@@ -104,3 +104,67 @@ fn summarizes_every_program_with_the_same_rule() {
         ]
     );
 }
+
+#[test]
+fn codex_filters_known_injected_instruction_blocks() {
+    let input = concat!(
+        r##"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# Keep this\n\n<recommended_plugins>\n- secret plugin list\n</recommended_plugins># AGENTS.md instructions\n\n<INSTRUCTIONS>\nSecret agent rules.\n</INSTRUCTIONS>\n<environment_context>\n<cwd>/private</cwd>\n</environment_context>\n<codex_internal_context>\nsecret runtime context\n</codex_internal_context>\n\n## Real request\nPlease **ship** this."}]}}"##,
+        "\n",
+        r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}}"#,
+    );
+
+    let messages = parse_jsonl(input, Source::Codex).expect("parse Codex JSONL");
+    assert_eq!(
+        messages,
+        vec![
+            Message::new(
+                Role::User,
+                "# Keep this\n\n## Real request\nPlease **ship** this."
+            ),
+            Message::new(Role::Assistant, "Done."),
+        ]
+    );
+}
+
+#[test]
+fn preserves_ordinary_markdown_and_injected_block_near_matches() {
+    let input = r##"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# Notes\n\n<recommended-plugin>\nnot the injected tag\n</recommended-plugin>\n\n# AGENTS.md instruction\nsingular heading is ordinary Markdown\n\n<environment_context>\nmissing closing tag is ordinary Markdown"}]}}"##;
+
+    let messages = parse_jsonl(input, Source::Codex).expect("parse Codex JSONL");
+    assert_eq!(
+        messages,
+        vec![Message::new(
+            Role::User,
+            "# Notes\n\n<recommended-plugin>\nnot the injected tag\n</recommended-plugin>\n\n# AGENTS.md instruction\nsingular heading is ordinary Markdown\n\n<environment_context>\nmissing closing tag is ordinary Markdown"
+        )]
+    );
+}
+
+#[test]
+fn preserves_whitespace_when_no_injected_block_is_removed() {
+    let input = r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"  leading\n\n\ntrailing  \n"}]}}"#;
+
+    assert_eq!(
+        parse_jsonl(input, Source::Codex).unwrap(),
+        vec![Message::new(Role::User, "  leading\n\n\ntrailing  \n")]
+    );
+}
+
+#[test]
+fn drops_redacted_domain_instructions_and_attributed_goal_context() {
+    let input = concat!(
+        r##"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# [DOMAIN_NAME] instructions\n\n<INSTRUCTIONS>not user authored</INSTRUCTIONS>"}]}}"##,
+        "\n",
+        r##"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<codex_internal_context source=\"goal\">not user authored</codex_internal_context>"}]}}"##,
+        "\n",
+        r##"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# Real prompt\n\nPlease inspect this."}]}}"##,
+    );
+
+    assert_eq!(
+        parse_jsonl(input, Source::Codex).unwrap(),
+        vec![Message::new(
+            Role::User,
+            "# Real prompt\n\nPlease inspect this."
+        )]
+    );
+}

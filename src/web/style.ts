@@ -63,7 +63,7 @@ label { display: block; margin-bottom: 5px; color: var(--green); font-weight: 70
 input { width: 100%; margin-bottom: 12px; padding: 8px; border: 1px solid #4b5b50; border-radius: 0; background: var(--bg); color: var(--ink); font: inherit; }
 code, pre { font-family: inherit; }
 pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; border: 1px solid var(--line); background: var(--panel); color: #c8d2ca; }
-.viewer { position: relative; padding-right: 52px; }
+.viewer { position: relative; padding-right: 64px; }
 .meta { margin-bottom: 7px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 .thread { border-top: 1px solid var(--line); }
 .call-block { margin: 0; border-bottom: 1px solid var(--line); }
@@ -79,7 +79,73 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; bord
 .message.user { margin-top: 7px; border-left: 2px solid var(--green); background: #0c1510; }
 .call-block > .message { border-bottom: 0; }
 .message:target { box-shadow: inset 2px 0 var(--green); }
-.message p {
+.message-body {
+  min-width: 0;
+  max-width: 78ch;
+}
+.message-body p {
+  margin: 0;
+  color: #d3dbd5;
+  font-size: 13.5px;
+  line-height: 1.42;
+  letter-spacing: -.006em;
+}
+.message-body p + p, .message-body pre, .message-body ul, .message-body ol, .message-body blockquote { margin-top: 8px; }
+.message-body ul, .message-body ol { padding-left: 20px; }
+.message-body h2, .message-body h3, .message-body h4, .message-body h5, .message-body h6 {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+.message-body a { color: var(--green); }
+.message-body code { color: #f1c98a; }
+.message-body pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+.render-toggle {
+  display: block;
+  width: max-content;
+  margin: 0 0 6px;
+  padding: 1px 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.render-toggle span:first-child { color: var(--green); }
+.view-toggle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.view-toggle:focus-visible + .render-toggle { outline: 2px solid var(--amber); outline-offset: 2px; }
+.view-toggle:checked + .render-toggle span:first-child { color: var(--muted); }
+.view-toggle:checked + .render-toggle span:last-child { color: var(--green); }
+.message-text {
+  display: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #d3dbd5;
+  font-size: 13.5px;
+  line-height: 1.42;
+  letter-spacing: -.006em;
+  white-space: pre-wrap;
+}
+.view-toggle:checked ~ .rendered { display: none; }
+.view-toggle:checked ~ .message-text { display: block; }
+.rendered > :last-child { margin-bottom: 0; }
+.message > p {
   min-width: 0;
   max-width: 78ch;
   margin: 0;
@@ -100,8 +166,8 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; bord
 .minimap {
   position: fixed;
   inset-block: 0;
-  width: 36px;
-  margin-left: min(1004px, calc(100vw - 72px));
+  width: 48px;
+  margin-left: min(992px, calc(100vw - 84px));
   border-left: 1px solid var(--line);
   font-size: 9px;
 }
@@ -124,16 +190,16 @@ a:hover { color: #a3f6c1; }
   header span:not(.status) { display: none; }
   main { padding-top: 16px; }
   .facts { grid-template-columns: 1fr; }
-  .viewer { padding-right: 20px; }
+  .viewer { padding-right: 24px; }
   h1 { font-size: 21px; line-height: 1.22; }
   .message { grid-template-columns: 72px minmax(0, 1fr); padding-right: 4px; }
-  .message p { font-size: 12.5px; line-height: 1.42; }
+  .message-body p, .message > p, .message-text { font-size: 12.5px; line-height: 1.42; }
   .role { padding-left: 4px; }
   .role { gap: 5px; }
   .activity-run { margin-left: 0; padding-left: 0; }
   .message.tool, .message.file { grid-template-columns: 72px minmax(0, 1fr); }
   .message.tool p, .message.file p { font-size: 10.5px; }
-  .minimap { right: 5px; width: 8px; margin-left: 0; }
+  .minimap { right: 5px; width: 10px; margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 `

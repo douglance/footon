@@ -4,7 +4,7 @@ const map = document.querySelector('.minimap ol')
 const markers = [...document.querySelectorAll('.map-marker')]
 const targets = markers.map((marker) => ({
   marker,
-  message: document.getElementById(marker.hash.slice(1)),
+  message: document.getElementById(marker.getAttribute('href')?.slice(1) || marker.dataset.messageId),
 }))
 const canvas = document.createElement('canvas')
 const context = canvas.getContext('2d', { alpha: true })
@@ -57,14 +57,13 @@ function render(scroll) {
 }
 
 function animate(time) {
-  frame = 0
-  const elapsed = Math.min(48, time - lastTime)
+  const elapsed = Math.max(0, Math.min(48, time - lastTime))
   lastTime = time
   const easing = reducedMotion ? 1 : 1 - Math.exp(-elapsed / 72)
   currentScroll += (targetScroll - currentScroll) * easing
   if (Math.abs(targetScroll - currentScroll) < .1) currentScroll = targetScroll
   render(currentScroll)
-  if (currentScroll !== targetScroll) frame = requestAnimationFrame(animate)
+  frame = currentScroll !== targetScroll ? requestAnimationFrame(animate) : 0
 }
 
 function schedule() {

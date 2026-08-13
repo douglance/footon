@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { CSS } from '../src/web/style.js'
 
 describe('minimap styling', () => {
-  it('uses narrow rails with a full-width canvas lens', () => {
-    expect(CSS).toContain('width: 36px;')
-    expect(CSS).toContain('width: 8px;')
+  it('uses narrow rails with full role-color fills', () => {
+    expect(CSS).toContain('width: 48px;')
+    expect(CSS).toContain('width: 10px;')
     expect(CSS).toContain('.minimap li { position: absolute; inset-inline: 1px;')
     expect(CSS).toContain('.map-viewport { position: absolute; z-index: 2; inset-inline: 0;')
     expect(CSS).toContain('.map-marker.user { background: rgba(114, 227, 159, .55); }')

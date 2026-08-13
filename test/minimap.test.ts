@@ -9,6 +9,7 @@ describe('visible message range', () => {
     expect(MINIMAP_JS).toContain('message.offsetHeight * scale')
     expect(MINIMAP_JS).toContain("document.createElement('canvas')")
     expect(MINIMAP_JS).toContain('textureContext.fillRect(1, top * scale')
+    expect(MINIMAP_JS).toContain('marker.dataset.messageId')
   })
 
   it('magnifies the visible range with frame-synchronized exponential easing', () => {
