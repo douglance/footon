@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod activity;
 pub mod cli;
 pub mod draft;
 pub mod error;

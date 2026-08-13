@@ -19,7 +19,7 @@ export class ApiHandler extends WorkerEntrypoint<Env, AuthProps> {
     }
     const document = await parseDocument(request)
     if (!document)
-      return json({ error: 'invalid_json', message: 'Send one footon.share.v1 document.' }, 400)
+      return json({ error: 'invalid_json', message: 'Send one footon.share.v2 document.' }, 400)
     const safety = inspectShare(document)
     if (!safety.ok) return json({ error: safety.code, message: safety.message }, 422)
     const share = await createShare(this.env.DB, this.ctx.props.userId, document)

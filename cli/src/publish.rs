@@ -75,11 +75,11 @@ pub async fn send(endpoint: &str, token: &str, share: &Share) -> Result<PublishR
 
 fn validate_draft(draft: &Draft) -> Result<()> {
     if draft.schema_version != SCHEMA_VERSION {
-        return Err(Error::Share("draft is not footon.share.v1".to_string()));
+        return Err(Error::Share("draft is not footon.share.v2".to_string()));
     }
     if !(1..=MAX_MESSAGES).contains(&draft.messages.len()) {
         return Err(Error::Share(
-            "draft must contain 1 to 500 messages".to_string(),
+            "draft must contain 1 to 2000 transcript items".to_string(),
         ));
     }
     let bytes = draft

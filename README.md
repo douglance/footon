@@ -49,6 +49,6 @@ list, and revoke calls. It never sends a real email or writes production data.
 
 The official CLI combines `redact-core` with independent credential, key,
 connection-string, path, and metadata removal. The Worker validates the exact
-`footon.share.v1` shape and rejects remaining high-signal secrets and personal
+`footon.share.v2` shape and rejects remaining high-signal secrets and personal
 data. No scanner can prove arbitrary text is secret-free, so explicit local
 review remains mandatory.

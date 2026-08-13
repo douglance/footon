@@ -44,3 +44,35 @@ describe('inspectShare', () => {
     ).toBe(false)
   })
 })
+
+describe('v2 activity safety', () => {
+  it('accepts neutered tool and file summaries', () => {
+    expect(
+      inspectShare({
+        schemaVersion: 'footon.share.v2',
+        title: 'Safe activity',
+        approvedAt: '2026-08-13T00:00:00.000Z',
+        messages: [
+          { role: 'tool', text: 'functions.exec' },
+          { role: 'file', text: 'update viewer.ts' },
+        ],
+        report: { redactions: 0, detectors: ['footon-secret-patterns'] },
+      }),
+    ).toEqual({ ok: true })
+  })
+
+  it('rejects tool arguments and paths disguised as activity', () => {
+    const base = {
+      schemaVersion: 'footon.share.v2',
+      title: 'Unsafe activity',
+      approvedAt: '2026-08-13T00:00:00.000Z',
+      report: { redactions: 0, detectors: ['footon-secret-patterns'] },
+    }
+    expect(
+      inspectShare({ ...base, messages: [{ role: 'tool', text: 'exec --token value' }] }).ok,
+    ).toBe(false)
+    expect(
+      inspectShare({ ...base, messages: [{ role: 'file', text: 'update /private/a.ts' }] }).ok,
+    ).toBe(false)
+  })
+})

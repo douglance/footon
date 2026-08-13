@@ -1,8 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: &str = "footon.share.v1";
-pub const MAX_MESSAGES: usize = 500;
+pub const SCHEMA_VERSION: &str = "footon.share.v2";
+pub const MAX_MESSAGES: usize = 2_000;
 pub const MAX_TEXT_BYTES: usize = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -10,6 +10,8 @@ pub const MAX_TEXT_BYTES: usize = 1_000_000;
 pub enum Role {
     User,
     Assistant,
+    Tool,
+    File,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

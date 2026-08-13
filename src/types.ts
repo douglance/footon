@@ -15,12 +15,12 @@ export interface AuthProps {
 }
 
 export interface ShareMessage {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool' | 'file'
   text: string
 }
 
 export interface ShareDocument {
-  schemaVersion: 'footon.share.v1'
+  schemaVersion: 'footon.share.v1' | 'footon.share.v2'
   title: string
   approvedAt: string
   messages: ShareMessage[]

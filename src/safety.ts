@@ -1,6 +1,7 @@
 export type SafetyResult = { ok: true } | { ok: false; code: string; message: string }
 
 interface InspectedRoot {
+  schemaVersion: 'footon.share.v1' | 'footon.share.v2'
   title: string
   messages: unknown[]
 }
@@ -31,7 +32,7 @@ export function inspectShare(value: unknown): SafetyResult {
   const share = value as InspectedRoot
   let bytes = textBytes(share.title)
   for (const message of share.messages) {
-    const result = inspectMessage(message)
+    const result = inspectMessage(message, share.schemaVersion)
     if (!result.ok) return result
     bytes += textBytes((message as { text: string }).text)
   }
@@ -42,30 +43,42 @@ export function inspectShare(value: unknown): SafetyResult {
 function inspectRoot(value: unknown): SafetyResult {
   if (!isObject(value) || !exactKeys(value, ROOT_KEYS))
     return unsafe('shape', 'Invalid share shape')
-  if (value.schemaVersion !== 'footon.share.v1') return unsafe('schema', 'Unsupported schema')
+  if (!validSchema(value.schemaVersion)) return unsafe('schema', 'Unsupported schema')
   if (!validTitle(value.title) || !validDate(value.approvedAt))
     return unsafe('fields', 'Invalid share fields')
-  if (!validMessages(value.messages)) return unsafe('messages', 'A share needs 1 to 500 messages')
+  if (!validMessages(value.messages)) return unsafe('messages', 'A share needs 1 to 2000 items')
   if (!validReport(value.report)) return unsafe('report', 'Invalid sanitization report')
   return { ok: true }
 }
 
 function validMessages(value: unknown): value is unknown[] {
-  return Array.isArray(value) && value.length > 0 && value.length <= 500
+  return Array.isArray(value) && value.length > 0 && value.length <= 2_000
 }
 
-function inspectMessage(value: unknown): SafetyResult {
+function inspectMessage(value: unknown, schema: InspectedRoot['schemaVersion']): SafetyResult {
   if (!isObject(value) || !exactKeys(value, MESSAGE_KEYS))
     return unsafe('message_shape', 'Invalid message')
-  if (!validRole(value.role)) return unsafe('role', 'Only conversation roles are allowed')
+  if (!validRole(value.role, schema)) return unsafe('role', 'Unsupported transcript role')
   if (!validMessageText(value.text)) {
     return unsafe('message_text', 'Invalid message text')
   }
+  if (!validActivity(value.role, value.text)) return unsafe('activity', 'Invalid activity summary')
   return scanText(value.text) ?? { ok: true }
 }
 
-function validRole(value: unknown): boolean {
-  return value === 'user' || value === 'assistant'
+function validSchema(value: unknown): value is InspectedRoot['schemaVersion'] {
+  return value === 'footon.share.v1' || value === 'footon.share.v2'
+}
+
+function validRole(value: unknown, schema: InspectedRoot['schemaVersion']): boolean {
+  if (value === 'user' || value === 'assistant') return true
+  return schema === 'footon.share.v2' && (value === 'tool' || value === 'file')
+}
+
+function validActivity(role: unknown, text: string): boolean {
+  if (role === 'tool') return /^[A-Za-z0-9_.:-]{1,80}$/u.test(text)
+  if (role === 'file') return /^(?:add|update|delete) [A-Za-z0-9][A-Za-z0-9._-]{0,119}$/u.test(text)
+  return true
 }
 
 function validMessageText(value: unknown): value is string {

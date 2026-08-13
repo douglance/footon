@@ -13,7 +13,7 @@ FOOTON_TOKEN=... cargo run --manifest-path cli/Cargo.toml -- \
 ```
 
 `publish` is the only network mutation. It sets `approvedAt` at invocation time
-and sends the exact `footon.share.v1` document to the HTTPS share endpoint.
+and sends the exact `footon.share.v2` document to the HTTPS share endpoint.
 The bearer token is read from `FOOTON_TOKEN` and is never written to disk.
 
 Safety is layered: `redact-core` 0.9.1 handles PII and high-signal credential

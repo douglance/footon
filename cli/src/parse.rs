@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use serde_json::Value;
 
+use crate::activity::tool_activity;
 use crate::error::{Error, Result};
 use crate::model::{Message, Role};
 
@@ -25,7 +26,7 @@ impl FromStr for Source {
     }
 }
 
-/// Extract only user and assistant prose from Claude Code or Codex JSONL.
+/// Extract conversation prose and neutered activity summaries from Claude or Codex JSONL.
 ///
 /// # Errors
 ///
@@ -38,7 +39,7 @@ pub fn parse_jsonl(input: &str, source: Source) -> Result<Vec<Message>> {
     let resolved = resolve_source(&values, source);
     let messages = values
         .iter()
-        .filter_map(|value| parse_record(value, resolved))
+        .flat_map(|value| parse_record(value, resolved))
         .collect::<Vec<_>>();
     if messages.is_empty() {
         return Err(Error::NoMessages);
@@ -57,37 +58,70 @@ fn resolve_source(values: &[Value], source: Source) -> Source {
     }
 }
 
-fn parse_record(value: &Value, source: Source) -> Option<Message> {
+fn parse_record(value: &Value, source: Source) -> Vec<Message> {
     match source {
         Source::Claude => parse_claude(value),
         Source::Codex => parse_codex(value),
-        Source::Auto => None,
+        Source::Auto => Vec::new(),
     }
 }
 
-fn parse_claude(value: &Value) -> Option<Message> {
-    let role = parse_role(value.get("type")?.as_str()?)?;
-    let message = value.get("message")?;
+fn parse_claude(value: &Value) -> Vec<Message> {
+    let Some(role) = value
+        .get("type")
+        .and_then(Value::as_str)
+        .and_then(parse_role)
+    else {
+        return Vec::new();
+    };
+    let Some(message) = value.get("message") else {
+        return Vec::new();
+    };
     let declared = message.get("role").and_then(Value::as_str);
     if declared
         .and_then(parse_role)
         .is_some_and(|item| item != role)
     {
-        return None;
+        return Vec::new();
     }
-    text_message(role, message.get("content")?)
+    claude_content(role, message.get("content"))
 }
 
-fn parse_codex(value: &Value) -> Option<Message> {
-    if value.get("type")?.as_str()? != "response_item" {
-        return None;
+fn parse_codex(value: &Value) -> Vec<Message> {
+    if value.get("type").and_then(Value::as_str) != Some("response_item") {
+        return Vec::new();
     }
-    let payload = value.get("payload")?;
-    if payload.get("type")?.as_str()? != "message" {
-        return None;
+    let Some(payload) = value.get("payload") else {
+        return Vec::new();
+    };
+    if payload.get("type").and_then(Value::as_str) == Some("message") {
+        return codex_message(payload).into_iter().collect();
     }
+    tool_activity(payload)
+}
+
+fn codex_message(payload: &Value) -> Option<Message> {
     let role = parse_role(payload.get("role")?.as_str()?)?;
     text_message(role, payload.get("content")?)
+}
+
+fn claude_content(role: Role, content: Option<&Value>) -> Vec<Message> {
+    let Some(content) = content else {
+        return Vec::new();
+    };
+    let Value::Array(blocks) = content else {
+        return text_message(role, content).into_iter().collect();
+    };
+    blocks
+        .iter()
+        .flat_map(|block| match block.get("type").and_then(Value::as_str) {
+            Some("tool_use") => tool_activity(block),
+            _ => text_block(block)
+                .map(|text| Message::new(role, text))
+                .into_iter()
+                .collect(),
+        })
+        .collect()
 }
 
 fn text_message(role: Role, content: &Value) -> Option<Message> {
@@ -108,6 +142,9 @@ fn extract_text(content: &Value) -> String {
 }
 
 fn text_block(block: &Value) -> Option<String> {
+    if let Value::String(text) = block {
+        return Some(text.clone());
+    }
     match block.get("type").and_then(Value::as_str) {
         Some("text" | "input_text" | "output_text") => {
             block.get("text").and_then(Value::as_str).map(str::to_owned)

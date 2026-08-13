@@ -81,7 +81,7 @@ fn publish_command() -> CommandDef {
             }
         },
     )
-    .description("Explicitly approve and publish one sanitized footon.share.v1 draft")
+    .description("Explicitly approve and publish one sanitized footon.share.v2 draft")
     .done()
 }
 

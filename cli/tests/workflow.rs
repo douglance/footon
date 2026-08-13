@@ -45,7 +45,7 @@ async fn publish_sends_bearer_and_exact_share_body() {
     let body = request.split("\r\n\r\n").nth(1).unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(body).unwrap()["schemaVersion"],
-        "footon.share.v1"
+        "footon.share.v2"
     );
 }
 
@@ -66,7 +66,7 @@ fn draft_argv(input: &std::path::Path, output: &std::path::Path) -> Vec<String> 
 
 fn sample_draft() -> Draft {
     Draft {
-        schema_version: "footon.share.v1".to_string(),
+        schema_version: "footon.share.v2".to_string(),
         title: "Safe".to_string(),
         messages: vec![Message::new(Role::User, "hello")],
         report: Report::default(),

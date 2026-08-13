@@ -5,7 +5,7 @@ use footon::publish::{build_share, validate_endpoint};
 #[test]
 fn publish_adds_approval_and_emits_exact_wire_keys() {
     let draft = Draft {
-        schema_version: "footon.share.v1".to_string(),
+        schema_version: "footon.share.v2".to_string(),
         title: "Safe thread".to_string(),
         messages: vec![Message::new(Role::User, "hello")],
         report: Report {
@@ -50,7 +50,7 @@ fn rejects_unsanitized_or_oversized_drafts() {
     assert!(build_share(unsafe_draft, Utc::now()).is_err());
 
     let empty = Draft {
-        schema_version: "footon.share.v1".to_string(),
+        schema_version: "footon.share.v2".to_string(),
         title: "empty".to_string(),
         messages: vec![],
         report: Report::default(),

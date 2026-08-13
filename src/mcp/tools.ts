@@ -6,7 +6,7 @@ export const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {
-        document: { type: 'object', description: 'A footon.share.v1 sanitized document.' },
+        document: { type: 'object', description: 'A footon.share.v2 sanitized document.' },
       },
       required: ['document'],
       additionalProperties: false,
