@@ -106,13 +106,13 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; bord
   font-size: 9px;
 }
 .minimap ol { position: relative; z-index: 1; height: 100vh; margin: 0; padding: 0; list-style: none; }
-.minimap li { position: absolute; inset-inline: 0; min-height: 1px; }
+.minimap li { position: absolute; inset-inline: 1px; min-height: 1px; }
 .map-viewport { position: absolute; z-index: 2; inset-inline: 0; top: 0; background: rgba(255, 255, 255, .24); pointer-events: none; }
-.map-marker { display: block; width: 100%; height: 100%; min-height: 1px; background: #425047; text-decoration: none; }
-.map-marker.user { background: var(--green); }
-.map-marker.assistant { background: var(--amber); }
-.map-marker.tool { background: #68cce8; }
-.map-marker.file { background: #c6a4ef; }
+.map-marker { display: block; width: 100%; height: 100%; min-height: 1px; background: rgba(66, 80, 71, .55); text-decoration: none; }
+.map-marker.user { background: rgba(114, 227, 159, .55); }
+.map-marker.assistant { background: rgba(230, 181, 102, .55); }
+.map-marker.tool { background: rgba(104, 204, 232, .55); }
+.map-marker.file { background: rgba(198, 164, 239, .55); }
 .map-marker:hover, .map-marker:focus-visible { filter: brightness(1.25); }
 a:hover { color: #a3f6c1; }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
