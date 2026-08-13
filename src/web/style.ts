@@ -21,7 +21,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-header, main, footer { width: 100%; max-width: 1040px; margin-inline: auto; }
+header, main { width: 100%; max-width: 1040px; margin-inline: auto; }
 header {
   height: 42px;
   display: flex;
@@ -34,18 +34,10 @@ header {
 .brand { color: var(--green); font-weight: 800; text-decoration: none; }
 .status { margin-left: auto; color: var(--green); }
 main { padding: 24px 0 40px; overflow-wrap: anywhere; }
-footer {
-  display: flex;
-  justify-content: space-between;
-  padding: 12px 0 24px;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 10px;
-}
 h1 { max-width: 820px; margin: 5px 0 10px; font-size: clamp(20px, 3vw, 30px); line-height: 1.18; letter-spacing: -.025em; }
 p { margin: 8px 0; }
 .lede { max-width: 700px; color: #b3beb5; font-size: 14px; }
-.role, .map-head { color: var(--green); font-weight: 750; }
+.role { color: var(--green); font-weight: 750; }
 .muted { color: #91a096; }
 .panel { max-width: 800px; padding: 18px 20px; border: 1px solid var(--line); background: var(--panel); }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0; }
@@ -107,22 +99,21 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; bord
 .message.tool p, .message.file p { color: #a8b5ac; font-size: 11.5px; line-height: 1.38; letter-spacing: 0; }
 .minimap {
   position: fixed;
-  top: 58px;
+  inset-block: 0;
   width: 96px;
   margin-left: min(944px, calc(100vw - 132px));
   padding-left: 10px;
   border-left: 1px solid var(--line);
   font-size: 9px;
 }
-.map-head { display: flex; justify-content: space-between; margin-bottom: 6px; text-transform: uppercase; }
-.map-head span { color: var(--muted); }
-.minimap ol { display: flex; flex-direction: column; height: calc(100vh - 112px); margin: 0; padding: 0 3px 0 0; list-style: none; }
+.minimap ol { display: flex; flex-direction: column; height: 100vh; margin: 0; padding: 0 3px 0 0; list-style: none; }
 .minimap li { flex: 1 1 1px; min-height: 1px; max-height: 9px; }
 .map-marker { display: block; width: 28px; height: 100%; min-height: 1px; border-top: 1px solid #425047; text-decoration: none; }
 .map-marker.user { width: 76px; min-height: 2px; border-color: var(--green); }
 .map-marker.assistant { border-color: var(--amber); opacity: .72; }
 .map-marker.tool { border-color: #68cce8; }
 .map-marker.file { border-color: #c6a4ef; }
+.map-marker.active { width: 76px; border-color: var(--green); background: rgba(114, 227, 159, .32); opacity: 1; }
 .map-marker:hover, .map-marker:focus-visible { width: 76px; opacity: 1; }
 a:hover { color: #a3f6c1; }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
@@ -142,10 +133,8 @@ a:hover { color: #a3f6c1; }
   .message.tool, .message.file { grid-template-columns: 72px minmax(0, 1fr); }
   .message.tool p, .message.file p { font-size: 10.5px; }
   .minimap { right: 5px; width: 23px; margin-left: 0; padding-left: 5px; }
-  .map-head { display: none; }
-  .minimap ol { height: calc(100vh - 76px); }
   .map-marker { width: 8px; }
-  .map-marker.user, .map-marker:hover, .map-marker:focus-visible { width: 17px; }
+  .map-marker.user, .map-marker.active, .map-marker:hover, .map-marker:focus-visible { width: 17px; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 `

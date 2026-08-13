@@ -5,6 +5,7 @@ import { deleteExpiredAuth } from './auth/store.js'
 import { McpHandler } from './mcp/handler.js'
 import type { Env } from './types.js'
 import { renderConnect, renderCss, renderHome, renderInstall } from './web/home.js'
+import { renderMinimapScript } from './web/minimap.js'
 import { renderShare } from './web/viewer.js'
 
 const browserHandler: ExportedHandler<Env> = {
@@ -23,6 +24,7 @@ function renderStatic(path: string): Response | null {
   if (path === '/install') return renderInstall()
   if (path === '/connect') return renderConnect()
   if (path === '/style.css') return renderCss()
+  if (path === '/viewer.js') return renderMinimapScript()
   return null
 }
 
