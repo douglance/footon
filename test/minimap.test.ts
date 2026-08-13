@@ -12,12 +12,14 @@ describe('visible message range', () => {
     expect(MINIMAP_JS).toContain('marker.dataset.messageId')
   })
 
-  it('magnifies the visible range with frame-synchronized exponential easing', () => {
-    expect(MINIMAP_JS).toContain('sourceHeight * 4.4')
-    expect(MINIMAP_JS).toContain('1 - Math.exp(-elapsed / 72)')
-    expect(MINIMAP_JS).toContain('Math.max(0, Math.min(48, time - lastTime))')
-    expect(MINIMAP_JS).toContain('drawSlice(area.sourceTop, area.sourceHeight')
+  it('keeps message geometry stable beneath one proportional viewport', () => {
+    expect(MINIMAP_JS).toContain('window.innerHeight * scale')
+    expect(MINIMAP_JS).toContain('window.scrollY * scale')
+    expect(MINIMAP_JS).toContain('context.drawImage(texture, 0, 0, map.clientWidth, height)')
     expect(MINIMAP_JS).toContain('requestAnimationFrame')
+    expect(MINIMAP_JS).not.toContain('sourceHeight * 4.4')
+    expect(MINIMAP_JS).not.toContain('Math.exp')
+    expect(MINIMAP_JS).not.toContain('drawSlice')
     expect(MINIMAP_JS).not.toContain('IntersectionObserver')
     expect(MINIMAP_JS).not.toContain('marker.parentElement.style')
   })
@@ -25,6 +27,7 @@ describe('visible message range', () => {
   it('supports pointer and keyboard navigation with reduced motion', () => {
     expect(MINIMAP_JS).toContain("canvas.addEventListener('pointerdown'")
     expect(MINIMAP_JS).toContain("canvas.addEventListener('keydown'")
+    expect(MINIMAP_JS).toContain('event.clientY / scale')
     expect(MINIMAP_JS).toContain("matchMedia('(prefers-reduced-motion: reduce)')")
   })
 

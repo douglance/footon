@@ -24,7 +24,7 @@ export async function renderShare(env: Env, id: string): Promise<Response> {
     share.createdAt,
     share.document.report.redactions,
   )
-  const content = `<article class="viewer">${header}${transcript.map}<div class="thread">${transcript.messages}</div></article><script src="/viewer.js?v=5" defer></script>`
+  const content = `<article class="viewer">${header}${transcript.map}<div class="thread">${transcript.messages}</div></article><script src="/viewer.js?v=6" defer></script>`
   return htmlResponse(page(share.title, content))
 }
 
