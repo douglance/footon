@@ -2,6 +2,7 @@ use std::fs;
 
 use chrono::{TimeZone, Utc};
 use footon::cli::app;
+use footon::fetch::fetch_markdown;
 use footon::model::{Draft, Message, Report, Role};
 use footon::publish::{build_share, send};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -69,8 +70,82 @@ fn sample_draft() -> Draft {
         schema_version: "footon.share.v2".to_string(),
         title: "Safe".to_string(),
         messages: vec![Message::new(Role::User, "hello")],
-        report: Report::default(),
+        report: Report {
+            redactions: 0,
+            detectors: vec!["footon-secret-patterns@1".to_string()],
+        },
     }
+}
+
+#[tokio::test]
+async fn fetch_requests_markdown_and_returns_only_markdown() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/s/share_1", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut bytes = vec![0; 8192];
+        let size = stream.read(&mut bytes).await.unwrap();
+        let request = String::from_utf8(bytes[..size].to_vec()).unwrap();
+        let body = "# Safe\n\n## AGENT\n\nDone\n";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/markdown; charset=utf-8\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).await.unwrap();
+        request
+    });
+
+    let markdown = fetch_markdown(&endpoint).await.unwrap();
+    let request = server.await.unwrap();
+
+    assert!(request.contains("accept: text/markdown"));
+    assert_eq!(markdown, "# Safe\n\n## AGENT\n\nDone\n");
+}
+
+#[tokio::test]
+async fn fetch_rejects_unsafe_remote_http() {
+    assert!(
+        fetch_markdown("http://example.com/s/share_1")
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn fetch_rejects_wrong_content_type_and_oversized_body() {
+    let wrong_type = serve_once(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\nContent-Length: 4\r\n\r\nhtml",
+    )
+    .await;
+    assert!(fetch_markdown(&wrong_type).await.is_err());
+
+    let oversized = serve_once(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/markdown\r\nConnection: close\r\nContent-Length: 1000001\r\n\r\n",
+    )
+    .await;
+    assert!(fetch_markdown(&oversized).await.is_err());
+}
+
+#[tokio::test]
+async fn fetch_rejects_cross_origin_redirects() {
+    let redirect = serve_once(
+        "HTTP/1.1 302 Found\r\nLocation: https://example.com/s/other\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+    )
+    .await;
+
+    assert!(fetch_markdown(&redirect).await.is_err());
+}
+
+async fn serve_once(response: &'static str) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/s/share_1", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut bytes = vec![0; 4096];
+        let _size = stream.read(&mut bytes).await.unwrap();
+        stream.write_all(response.as_bytes()).await.unwrap();
+    });
+    endpoint
 }
 
 async fn capture_request(listener: TcpListener) -> String {

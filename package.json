@@ -4,35 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit",
-    "check": "npm run format:check && npm run lint && npm run build && npm test",
+    "build": "worker-build --release --out-dir build worker",
+    "check": "cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace && npm run build",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "lint": "npm run lint:ts && npm run lint:rust",
+    "format": "cargo fmt --all",
+    "format:check": "cargo fmt --all --check",
+    "lint": "npm run lint:rust",
     "lint:rust": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-    "lint:ts": "eslint . --max-warnings 0",
-    "test": "vitest run",
-    "test:e2e": "vitest run test/e2e",
-    "types": "wrangler types"
-  },
-  "dependencies": {
-    "@cloudflare/workers-oauth-provider": "0.10.3",
-    "markdown-it": "15.0.0",
-    "postal-mime": "3.0.0"
+    "test": "cargo test --workspace"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.21.2",
-    "@cloudflare/workers-types": "5.20260813.1",
-    "@eslint/js": "^9.33.0",
-    "@types/markdown-it": "14.1.2",
-    "@types/node": "^24.2.1",
-    "eslint": "^9.33.0",
-    "prettier": "^3.6.2",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.39.1",
-    "vitest": "^4.1.10",
     "wrangler": "^4.122.0"
   }
 }

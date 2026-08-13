@@ -14,6 +14,8 @@ pub enum Error {
     },
     #[error("invalid JSON: {0}")]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Core(#[from] footon_core::Error),
     #[error("no user or assistant prose was found")]
     NoMessages,
     #[error("unsupported source {0}; use auto, claude, or codex")]
@@ -26,6 +28,8 @@ pub enum Error {
     Endpoint(String),
     #[error("publish request failed: {0}")]
     Publish(String),
+    #[error("fetch request failed: {0}")]
+    Fetch(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

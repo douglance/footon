@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::{Error, Result};
-use crate::model::{Draft, MAX_MESSAGES, MAX_TEXT_BYTES, SCHEMA_VERSION, Share};
+use crate::model::{Draft, Share};
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -20,14 +20,7 @@ pub struct PublishResponse {
 ///
 /// Returns an error when the schema, title, message count, or size is invalid.
 pub fn build_share(draft: Draft, approved_at: DateTime<Utc>) -> Result<Share> {
-    validate_draft(&draft)?;
-    Ok(Share {
-        schema_version: draft.schema_version,
-        title: draft.title,
-        approved_at,
-        messages: draft.messages,
-        report: draft.report,
-    })
+    footon_core::validate::build_share(draft, approved_at).map_err(Into::into)
 }
 
 /// Validate that publishing uses HTTPS, except for loopback integration tests.
@@ -71,27 +64,4 @@ pub async fn send(endpoint: &str, token: &str, share: &Share) -> Result<PublishR
         .json()
         .await
         .map_err(|error| Error::Publish(error.to_string()))
-}
-
-fn validate_draft(draft: &Draft) -> Result<()> {
-    if draft.schema_version != SCHEMA_VERSION {
-        return Err(Error::Share("draft is not footon.share.v2".to_string()));
-    }
-    if !(1..=MAX_MESSAGES).contains(&draft.messages.len()) {
-        return Err(Error::Share(
-            "draft must contain 1 to 2000 transcript items".to_string(),
-        ));
-    }
-    let bytes = draft
-        .messages
-        .iter()
-        .map(|message| message.text.len())
-        .sum::<usize>();
-    if bytes > MAX_TEXT_BYTES {
-        return Err(Error::Share("message text exceeds 1 MB".to_string()));
-    }
-    if draft.title.trim().is_empty() {
-        return Err(Error::Share("title is required".to_string()));
-    }
-    Ok(())
 }

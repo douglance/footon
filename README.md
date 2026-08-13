@@ -1,6 +1,6 @@
 # footon
 
-footon turns Claude and Codex JSONL transcripts into sanitized, unlisted links.
+Footon turns Claude and Codex JSONL transcripts into sanitized, unlisted links.
 Raw transcripts remain local. Only user and assistant prose from an explicitly
 approved draft can be published.
 
@@ -12,38 +12,50 @@ The remote MCP endpoint is `https://footon.dev/mcp`. It uses OAuth 2.1 with
 passwordless email sign-in and exposes only `share_create`, `share_list`, and
 `share_revoke`.
 
+The application is Rust end to end. Topcoat owns route and method matching and
+builds the Tailwind stylesheet; workers-rs provides the Cloudflare D1, email,
+Turnstile, and runtime bindings. Node remains only for Wrangler packaging and
+deployment.
+
 ## CLI
 
 ```sh
 cargo install --git https://github.com/douglance/footon footon
 footon draft thread.jsonl --title "Public title" --output footon-draft.json
 FOOTON_TOKEN=... footon publish footon-draft.json
+footon fetch https://footon.dev/s/example
 ```
 
 Drafting makes no network request. Publishing is a separate command and refuses
 plain HTTP except for localhost tests. See [cli/README.md](cli/README.md) for the
 full contract.
 
+Public share URLs use HTTP content negotiation. Browsers receive the dense HTML
+reader by default. Agents can send `Accept: text/markdown`; `footon fetch` does
+this and writes the exact Markdown response to stdout. Explicit equal-quality
+HTML and Markdown preferences resolve to Markdown.
+
+## OAuth migration boundary
+
+The Rust OAuth service uses new D1 tables and the scopes `shares:read` and
+`shares:write`. Existing OAuth clients, authorization codes, access tokens, and
+refresh tokens are intentionally not migrated. Existing share rows remain in
+the original `shares` table and remain readable, including v1 share documents.
+
 ## Development
 
 ```sh
 npm install
 npm run check
-npm run test:e2e
-cargo fmt --check
-cargo test
+npm run dev
 ```
 
-`npm run check` runs strict TypeScript and Rust linting. The Worker limits
-complexity to 8, functions to 45 lines, and files to 220 lines. The Rust crate
-denies Clippy `all`, `pedantic`, cognitive complexity, large functions,
-warnings, and unsafe code across the workspace, all targets, and all features.
+`npm run check` formats, lints, tests, and builds the complete Rust workspace.
+Apply D1 migrations before running a fresh local Worker or deploying:
 
-The Worker E2E uses Cloudflare's local test harness with isolated D1, KV, and
-simulated email. It covers dynamic client registration, PKCE authorization,
-Turnstile's localhost boundary, email capture, magic-link verification,
-consent without a session cookie, token exchange, and authenticated MCP create,
-list, and revoke calls. It never sends a real email or writes production data.
+```sh
+npx wrangler d1 migrations apply footon --local
+```
 
 ## Safety boundary
 

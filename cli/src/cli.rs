@@ -2,10 +2,12 @@ use std::path::Path;
 
 use incurs::cli::Cli;
 use incurs::command::{CommandDef, TypedContext, TypedResult};
+use incurs::output::Format;
 use serde::Deserialize;
 
 use crate::draft::{self, DraftOutput};
 use crate::error::Error;
+use crate::fetch;
 use crate::parse::Source;
 use crate::publish::{self, PublishResponse};
 
@@ -33,6 +35,12 @@ struct PublishArgs {
     draft: String,
 }
 
+#[derive(Deserialize, incurs::Args)]
+struct FetchArgs {
+    /// HTTPS Footon share URL. Loopback HTTP is accepted for tests.
+    url: String,
+}
+
 #[derive(Deserialize, incurs::Options)]
 struct PublishOptions {
     /// Protected Footon share endpoint.
@@ -55,6 +63,7 @@ pub fn app() -> Cli {
         .description("Sanitize agent threads locally, then publish only an approved safe draft")
         .command("draft", draft_command())
         .command("publish", publish_command())
+        .command("fetch", fetch_command())
 }
 
 fn draft_command() -> CommandDef {
@@ -85,6 +94,18 @@ fn publish_command() -> CommandDef {
     .done()
 }
 
+fn fetch_command() -> CommandDef {
+    CommandDef::typed::<FetchArgs, (), (), String, _, _>("fetch", |context| async move {
+        match fetch_share(context).await {
+            Ok(output) => TypedResult::ok(output),
+            Err(error) => typed_error(&error),
+        }
+    })
+    .description("Fetch one Footon share as Markdown")
+    .format(Format::Markdown)
+    .done()
+}
+
 fn create_draft(
     context: TypedContext<DraftArgs, DraftOptions, ()>,
 ) -> crate::error::Result<DraftOutput> {
@@ -95,6 +116,10 @@ fn create_draft(
         context.options.title,
         source,
     )
+}
+
+async fn fetch_share(context: TypedContext<FetchArgs, (), ()>) -> crate::error::Result<String> {
+    fetch::fetch_markdown(&context.args.url).await
 }
 
 async fn publish_draft(
@@ -112,10 +137,18 @@ fn typed_error<T>(error: &Error) -> TypedResult<T> {
 fn error_code(error: &Error) -> &'static str {
     match error {
         Error::Read { .. } | Error::Write { .. } => "LOCAL_IO_ERROR",
-        Error::Json(_) | Error::NoMessages | Error::Source(_) => "INVALID_THREAD",
-        Error::Safety(_) => "SAFETY_FAILED",
-        Error::Share(_) => "INVALID_DRAFT",
+        Error::Json(_)
+        | Error::NoMessages
+        | Error::Source(_)
+        | Error::Core(
+            footon_core::Error::Json(_)
+            | footon_core::Error::NoMessages
+            | footon_core::Error::Source(_),
+        ) => "INVALID_THREAD",
+        Error::Safety(_) | Error::Core(footon_core::Error::Safety(_)) => "SAFETY_FAILED",
+        Error::Share(_) | Error::Core(footon_core::Error::Share(_)) => "INVALID_DRAFT",
         Error::Endpoint(_) => "UNSAFE_ENDPOINT",
         Error::Publish(_) => "PUBLISH_FAILED",
+        Error::Fetch(_) => "FETCH_FAILED",
     }
 }

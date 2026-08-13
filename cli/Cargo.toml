@@ -2,7 +2,7 @@
 name = "footon"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version.workspace = true
 description = "Sanitize and explicitly publish agent conversations to footon.dev"
 license = "MIT"
 repository = "https://github.com/douglance/footon"
@@ -10,6 +10,7 @@ repository = "https://github.com/douglance/footon"
 [dependencies]
 blake3 = "1.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+footon-core = { path = "../crates/footon-core" }
 incurs = { version = "=0.5.2", features = ["mcp"] }
 redact-core = "=0.9.1"
 regex = "1.12"

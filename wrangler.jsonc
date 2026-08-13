@@ -1,12 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "footon",
-  "main": "src/index.ts",
+  "main": "worker/build/worker/shim.mjs",
   "compatibility_date": "2026-08-12",
   "compatibility_flags": ["global_fetch_strictly_public"],
+  "build": { "command": "worker-build --release --out-dir build worker" },
   "routes": [{ "pattern": "footon.dev", "custom_domain": true }],
   "observability": { "enabled": true, "head_sampling_rate": 1 },
-  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "d5c4444c50af47a48738b747074b4714" }],
   "d1_databases": [
     {
       "binding": "DB",
