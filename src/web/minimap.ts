@@ -57,14 +57,13 @@ function render(scroll) {
 }
 
 function animate(time) {
-  frame = 0
-  const elapsed = Math.min(48, time - lastTime)
+  const elapsed = Math.max(0, Math.min(48, time - lastTime))
   lastTime = time
   const easing = reducedMotion ? 1 : 1 - Math.exp(-elapsed / 72)
   currentScroll += (targetScroll - currentScroll) * easing
   if (Math.abs(targetScroll - currentScroll) < .1) currentScroll = targetScroll
   render(currentScroll)
-  if (currentScroll !== targetScroll) frame = requestAnimationFrame(animate)
+  frame = currentScroll !== targetScroll ? requestAnimationFrame(animate) : 0
 }
 
 function schedule() {
