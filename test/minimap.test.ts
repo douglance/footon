@@ -15,6 +15,7 @@ describe('visible message range', () => {
   it('magnifies the visible range with frame-synchronized exponential easing', () => {
     expect(MINIMAP_JS).toContain('sourceHeight * 4.4')
     expect(MINIMAP_JS).toContain('1 - Math.exp(-elapsed / 72)')
+    expect(MINIMAP_JS).toContain('Math.max(0, Math.min(48, time - lastTime))')
     expect(MINIMAP_JS).toContain('drawSlice(area.sourceTop, area.sourceHeight')
     expect(MINIMAP_JS).toContain('requestAnimationFrame')
     expect(MINIMAP_JS).not.toContain('IntersectionObserver')
