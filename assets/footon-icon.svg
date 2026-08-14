@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+  <title id="title">Footon</title>
+  <desc id="description">A footprint pressed onto a folded sheet of paper</desc>
+  <rect width="128" height="128" rx="26" fill="#090c0a"/>
+  <path d="M29 20h49l21 21v67H29z" fill="#d7dfd8"/>
+  <path d="M78 20v21h21" fill="#a8b5ac"/>
+  <path d="M78 20v21h21" fill="none" stroke="#090c0a" stroke-width="5" stroke-linejoin="round"/>
+  <g fill="#72e39f" transform="rotate(-13 64 68)">
+    <path d="M55 55c-8 6-11 18-9 31 2 13 9 22 18 21 9-1 14-11 12-24-2-13-9-28-21-28z"/>
+    <circle cx="51" cy="44" r="7"/>
+    <circle cx="61" cy="39" r="6"/>
+    <circle cx="70" cy="40" r="5"/>
+    <circle cx="78" cy="44" r="4"/>
+    <circle cx="84" cy="49" r="3.5"/>
+  </g>
+</svg>

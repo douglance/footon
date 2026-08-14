@@ -24,6 +24,7 @@ mod viewer;
 use viewer::{VIEWER_JS, viewer_page};
 
 const STYLE: &str = include_str!(concat!(env!("OUT_DIR"), "/tailwind.css"));
+const ICON: &str = include_str!("../../assets/footon-icon.svg");
 const ORIGIN: &str = "https://footon.dev";
 const ACCESS_TTL_SECONDS: i64 = 3_600;
 const REFRESH_TTL_SECONDS: i64 = 2_592_000;
@@ -87,19 +88,22 @@ async fn handle(req: &mut Request, env: &Env) -> Result<Response> {
     let method = req.method();
 
     if method == Method::Get && path == "/" {
-        return html_response(home_page());
+        return html_response(&home_page());
     }
     if method == Method::Get && path == "/install" {
-        return html_response(install_page());
+        return html_response(&install_page());
     }
     if method == Method::Get && path == "/connect" {
-        return html_response(connect_page());
+        return html_response(&connect_page());
     }
     if method == Method::Get && path == "/style.css" {
         return css_response(STYLE);
     }
     if method == Method::Get && path == "/viewer.js" {
         return javascript_response(VIEWER_JS);
+    }
+    if method == Method::Get && path == "/favicon.svg" {
+        return svg_response(ICON);
     }
     if method == Method::Get && path == "/.well-known/oauth-authorization-server" {
         return json_response(&authorization_server_metadata());
@@ -111,7 +115,7 @@ async fn handle(req: &mut Request, env: &Env) -> Result<Response> {
         return oauth_register(req, env).await;
     }
     if method == Method::Get && path == "/authorize" {
-        return authorize_response(authorize_page(&url, env));
+        return authorize_response(&authorize_page(&url, env));
     }
     if method == Method::Post && path == "/auth/request" {
         return auth_request(req, env, &url).await;
@@ -152,6 +156,7 @@ fn router() -> Router {
         (HttpMethod::GET, "/connect"),
         (HttpMethod::GET, "/style.css"),
         (HttpMethod::GET, "/viewer.js"),
+        (HttpMethod::GET, "/favicon.svg"),
         (HttpMethod::GET, "/.well-known/oauth-authorization-server"),
         (HttpMethod::GET, "/.well-known/oauth-protected-resource/mcp"),
         (HttpMethod::POST, "/oauth/register"),
@@ -302,7 +307,7 @@ async fn public_share(req: &Request, env: &Env, id: &str) -> Result<Response> {
                 .url()?
                 .query_pairs()
                 .any(|(key, value)| key == "view" && value == "text");
-            html_response(viewer_page(&record, text_mode))
+            html_response(&viewer_page(&record, text_mode))
         }
     }
 }
@@ -547,7 +552,7 @@ async fn auth_request(req: &mut Request, env: &Env, url: &Url) -> Result<Respons
     if content_type.starts_with("application/json") {
         json_response(&AuthRequestResponse { ok: true })
     } else {
-        html_response(check_email_page())
+        html_response(&check_email_page())
     }
 }
 
@@ -1019,19 +1024,20 @@ async fn call_tool(
 }
 
 fn home_page() -> String {
-    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Footon</title><link rel="stylesheet" href="/style.css"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-3xl px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / SAFE AGENT SHARING</p><h1 class="mt-2 text-3xl font-semibold tracking-tight">Share the useful thread, not the private transcript.</h1><p class="mt-3 max-w-2xl text-sm leading-6 text-muted">Footon scans locally, requires explicit approval, scans again at publish time, and serves the approved result as a dense reader or plain Markdown.</p><div class="mt-6 flex gap-2 text-sm"><a class="border border-ink bg-ink px-3 py-2 text-paper" href="/install">Install CLI</a><a class="border border-line bg-paper px-3 py-2" href="/connect">Connect an agent</a></div></main></body></html>"#.to_string()
+    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Footon helps agents share a safe version of a thread or transcript."><title>Footon</title><link rel="stylesheet" href="/style.css?v=20260814-80ch-drag-3"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-3xl px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / SAFE AGENT THREAD SHARING</p><h1 class="mt-2 max-w-[40ch] text-3xl font-semibold tracking-tight text-balance">Share an agent thread safely.</h1><p class="mt-3 max-w-[56ch] text-base text-pretty text-muted sm:text-sm">Footon gives agents a simple way to share a safe version of their current thread or transcript with another person or agent. It removes sensitive data and noisy tool details. The original transcript stays local. Footon publishes only the draft you approve.</p><p class="mt-3 font-mono text-sm text-muted">DRAFT LOCALLY → REVIEW → SHARE AN UNLISTED LINK</p><section class="mt-8" id="install"><h2 class="text-lg font-semibold">Install the CLI</h2><pre class="mt-3 overflow-x-auto bg-paper p-3 text-sm"><code>cargo install --git https://github.com/douglance/footon footon</code></pre></section><section class="mt-8"><h2 class="text-lg font-semibold">Share a safe thread</h2><p class="mt-2 text-base text-pretty text-muted sm:text-sm">Create a sanitized draft from an agent transcript, review it, then publish only the approved file.</p><pre class="mt-3 overflow-x-auto bg-paper p-3 text-sm"><code>footon draft thread.jsonl --title "Public title" --output footon-draft.json
+FOOTON_TOKEN=... footon publish footon-draft.json</code></pre></section><section class="mt-8"><h2 class="text-lg font-semibold">Open a shared chain</h2><p class="mt-2 text-sm text-muted">Open the returned link in a browser, or fetch its Markdown for an agent.</p><pre class="mt-3 overflow-x-auto bg-paper p-3 text-sm"><code>footon fetch https://footon.dev/s/...</code></pre></section><section class="mt-8"><h2 class="text-lg font-semibold">Connect an agent</h2><p class="mt-2 text-sm text-muted">Use <code>https://footon.dev/mcp</code> as the remote MCP endpoint. Footon authorizes access with OAuth and passwordless email sign-in.</p><p class="mt-4 text-sm"><a href="/connect">View agent connection details</a></p></section></main></body></html>"#.to_string()
 }
 
 fn install_page() -> String {
-    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Install Footon</title><link rel="stylesheet" href="/style.css"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-2xl px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / INSTALL</p><h1 class="mt-2 text-2xl font-semibold">Install the Rust CLI</h1><pre class="mt-5 overflow-x-auto border border-line bg-paper p-3 text-sm"><code>cargo install footon</code></pre><p class="mt-4 text-sm text-muted">Fetch a shared thread as Markdown with <code>footon fetch https://footon.dev/s/...</code>.</p></main></body></html>"#.to_string()
+    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Install Footon</title><link rel="stylesheet" href="/style.css?v=20260814-80ch-drag-3"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-2xl px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / INSTALL</p><h1 class="mt-2 text-2xl font-semibold">Install the Rust CLI</h1><pre class="mt-5 overflow-x-auto border border-line bg-paper p-3 text-sm"><code>cargo install footon</code></pre><p class="mt-4 text-sm text-muted">Fetch a shared thread as Markdown with <code>footon fetch https://footon.dev/s/...</code>.</p></main></body></html>"#.to_string()
 }
 
 fn connect_page() -> String {
-    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Footon</title><link rel="stylesheet" href="/style.css"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-2xl px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / CONNECT</p><h1 class="mt-2 text-2xl font-semibold">Connect an agent</h1><dl class="mt-5 grid grid-cols-[8rem_1fr] gap-x-3 gap-y-2 border-y border-line py-3 text-sm"><dt class="text-muted">MCP endpoint</dt><dd><code>https://footon.dev/mcp</code></dd><dt class="text-muted">OAuth</dt><dd>Authorization code + PKCE S256</dd><dt class="text-muted">Scopes</dt><dd><code>shares:read shares:write</code></dd></dl></main></body></html>"#.to_string()
+    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Footon</title><link rel="stylesheet" href="/style.css?v=20260814-80ch-drag-3"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-2xl px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / CONNECT</p><h1 class="mt-2 text-2xl font-semibold">Connect an agent</h1><dl class="mt-5 grid grid-cols-[8rem_1fr] gap-x-3 gap-y-2 border-y border-line py-3 text-sm"><dt class="text-muted">MCP endpoint</dt><dd><code>https://footon.dev/mcp</code></dd><dt class="text-muted">OAuth</dt><dd>Authorization code + PKCE S256</dd><dt class="text-muted">Scopes</dt><dd><code>shares:read shares:write</code></dd></dl></main></body></html>"#.to_string()
 }
 
 fn check_email_page() -> String {
-    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Check your email</title><link rel="stylesheet" href="/style.css"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-md px-4 py-10"><p class="font-mono text-xs text-muted">FOOTON / AUTHORIZE</p><h1 class="mt-2 text-2xl font-semibold">Check your email</h1><p class="mt-3 text-sm text-muted">The sign-in link expires in 10 minutes and can be used once.</p></main></body></html>"#.to_string()
+    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Check your email</title><link rel="stylesheet" href="/style.css?v=20260814-80ch-drag-3"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-md px-4 py-10"><p class="font-mono text-xs text-muted">FOOTON / AUTHORIZE</p><h1 class="mt-2 text-2xl font-semibold">Check your email</h1><p class="mt-3 text-sm text-muted">The sign-in link expires in 10 minutes and can be used once.</p></main></body></html>"#.to_string()
 }
 
 fn authorize_page(url: &Url, env: &Env) -> String {
@@ -1046,7 +1052,7 @@ fn authorize_page(url: &Url, env: &Env) -> String {
         format!(r#"<div class="cf-turnstile" data-sitekey="{}"></div><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>"#, escape_html(&key.to_string()))
     });
     format!(
-        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorize Footon</title><link rel="stylesheet" href="/style.css"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-md px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / AUTHORIZE</p><h1 class="mt-2 text-2xl font-semibold">Authorize agent access</h1><p class="mt-2 text-sm text-muted">Requested scopes: <code>{scope}</code></p><form class="mt-5 grid gap-3" method="post" action="/auth/request"><label class="grid gap-1 text-xs font-medium">Email<input class="border border-line bg-paper px-3 py-2 text-sm" name="email" type="email" autocomplete="email" required></label><input type="hidden" name="client_id" value="{client_id}"><input type="hidden" name="redirect_uri" value="{redirect_uri}"><input type="hidden" name="scope" value="{scope}"><input type="hidden" name="state" value="{state}"><input type="hidden" name="code_challenge" value="{code_challenge}"><input type="hidden" name="code_challenge_method" value="S256"><input type="hidden" name="resource" value="{resource}">{turnstile}<button class="border border-ink bg-ink px-3 py-2 text-sm text-paper" type="submit">Send magic link</button></form></main></body></html>"#
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorize Footon</title><link rel="stylesheet" href="/style.css?v=20260814-80ch-drag-3"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-md px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / AUTHORIZE</p><h1 class="mt-2 text-2xl font-semibold">Authorize agent access</h1><p class="mt-2 text-sm text-muted">Requested scopes: <code>{scope}</code></p><form class="mt-5 grid gap-3" method="post" action="/auth/request"><label class="grid gap-1 text-xs font-medium">Email<input class="border border-line bg-paper px-3 py-2 text-sm" name="email" type="email" autocomplete="email" required></label><input type="hidden" name="client_id" value="{client_id}"><input type="hidden" name="redirect_uri" value="{redirect_uri}"><input type="hidden" name="scope" value="{scope}"><input type="hidden" name="state" value="{state}"><input type="hidden" name="code_challenge" value="{code_challenge}"><input type="hidden" name="code_challenge_method" value="S256"><input type="hidden" name="resource" value="{resource}">{turnstile}<button class="border border-ink bg-ink px-3 py-2 text-sm text-paper" type="submit">Send magic link</button></form></main></body></html>"#
     )
 }
 
@@ -1204,20 +1210,28 @@ fn json_response_with_status<T: Serialize>(value: &T, status: u16) -> Result<Res
     Ok(response)
 }
 
-fn html_response(html: String) -> Result<Response> {
-    let mut response = Response::from_html(html)?;
+fn html_response(html: &str) -> Result<Response> {
+    let mut response = Response::from_html(add_favicon(html))?;
     security_headers(&mut response)?;
     Ok(response)
 }
 
-fn authorize_response(html: String) -> Result<Response> {
-    let mut response = Response::from_html(html)?;
+fn authorize_response(html: &str) -> Result<Response> {
+    let mut response = Response::from_html(add_favicon(html))?;
     security_headers(&mut response)?;
     response.headers_mut().set(
         "Content-Security-Policy",
-        "default-src 'none'; style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; script-src https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src https://challenges.cloudflare.com; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+        "default-src 'none'; style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; script-src https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src https://challenges.cloudflare.com; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     )?;
     Ok(response)
+}
+
+fn add_favicon(html: &str) -> String {
+    html.replacen(
+        "</title>",
+        "</title><link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\">",
+        1,
+    )
 }
 
 fn markdown_response(markdown: &str) -> Result<Response> {
@@ -1261,6 +1275,20 @@ fn javascript_response(script: &str) -> Result<Response> {
     Ok(response)
 }
 
+fn svg_response(svg: &str) -> Result<Response> {
+    let mut response = Response::ok(svg.to_string())?;
+    response
+        .headers_mut()
+        .set("Content-Type", "image/svg+xml; charset=utf-8")?;
+    response
+        .headers_mut()
+        .set("Cache-Control", "public, max-age=86400")?;
+    response
+        .headers_mut()
+        .set("X-Content-Type-Options", "nosniff")?;
+    Ok(response)
+}
+
 fn internal_error(error: &worker::Error) -> Result<Response> {
     worker::console_error!("request failed: {error}");
     let mut response = Response::error("internal server error", 500)?;
@@ -1269,7 +1297,7 @@ fn internal_error(error: &worker::Error) -> Result<Response> {
 }
 
 fn security_headers(response: &mut Response) -> Result<()> {
-    response.headers_mut().set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")?;
+    response.headers_mut().set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")?;
     response
         .headers_mut()
         .set("Referrer-Policy", "no-referrer")?;
@@ -1335,6 +1363,9 @@ mod tests {
         let accepted = http::Request::get("https://footon.dev/s/abcdefghijklmnopqrst")
             .body(TopcoatBody::empty())
             .expect("request");
+        let favicon = http::Request::get("https://footon.dev/favicon.svg")
+            .body(TopcoatBody::empty())
+            .expect("request");
         let rejected = http::Request::post("https://footon.dev/s/abcdefghijklmnopqrst")
             .body(TopcoatBody::empty())
             .expect("request");
@@ -1344,6 +1375,10 @@ mod tests {
 
         assert_eq!(
             runtime.block_on(router().handle(accepted)).status(),
+            http::StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            runtime.block_on(router().handle(favicon)).status(),
             http::StatusCode::NO_CONTENT
         );
         assert_eq!(
@@ -1374,6 +1409,31 @@ mod tests {
     }
 
     #[test]
+    fn home_page_explains_and_installs_prompt_chain_sharing() {
+        let html = home_page();
+
+        assert!(html.contains("Share an agent thread safely"));
+        assert!(html.contains("safe version of their current thread or transcript"));
+        assert!(html.contains("another person or agent"));
+        assert!(html.contains("original transcript stays local"));
+        assert!(html.contains("cargo install --git https://github.com/douglance/footon footon"));
+        assert!(html.contains("footon draft thread.jsonl"));
+        assert!(html.contains("FOOTON_TOKEN=... footon publish footon-draft.json"));
+        assert!(html.contains("footon fetch https://footon.dev/s/..."));
+        assert!(html.contains("https://footon.dev/mcp"));
+        assert!(html.contains("/style.css?v=20260814-80ch-drag-3"));
+    }
+
+    #[test]
+    fn favicon_uses_the_green_footon_icon() {
+        let html = add_favicon(&home_page());
+
+        assert!(html.contains("<link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\">"));
+        assert!(ICON.contains("#72e39f"));
+        assert!(ICON.contains("A footprint pressed onto a folded sheet of paper"));
+    }
+
+    #[test]
     fn rendered_view_uses_flat_teletype_rows() {
         let record = ShareRecord {
             id: "abcdefghijklmnopqrst".to_string(),
@@ -1393,7 +1453,11 @@ mod tests {
             revoked_at: None,
         };
         let html = viewer_page(&record, false);
+        assert!(html.contains("<body class=\"viewer-page\">"));
         assert!(html.contains("<article class=\"viewer\">"));
+        assert!(html.contains("<div class=\"minimap-frame\">"));
+        assert!(html.contains("/style.css?v=20260814-80ch-drag-3"));
+        assert!(html.contains("/viewer.js?v=20260814-80ch-drag-3"));
         assert!(html.contains("<div class=\"thread\">"));
         assert!(html.contains("<section class=\"call-block\">"));
         assert!(html.contains("class=\"message assistant\""));
@@ -1416,13 +1480,23 @@ mod tests {
         assert!(!html.contains("bg-paper px-4 py-3"));
         let theme = include_str!("theme.css");
         assert!(theme.contains("grid-template-columns: 44px 72px minmax(0, 1fr)"));
+        assert!(theme.contains("padding: 7px 0 8px 0;"));
+        assert!(theme.contains("--document-width: calc(140px + 80ch);"));
+        assert!(theme.contains("max-width: 80ch;"));
+        assert!(theme.contains(".minimap-frame"));
         assert!(theme.contains("color-scheme: dark"));
         assert!(theme.contains("[hidden] { display: none !important; }"));
         assert!(theme.contains("z-index: 20;"));
         assert!(theme.contains("width: 24px;"));
         assert!(theme.contains("width: 6px;"));
+        assert!(theme.contains("touch-action: none;"));
         assert!(theme.contains(".message:hover, .message:focus-within"));
         assert!(!theme.contains(".message.user"));
+        assert!(VIEWER_JS.contains("setPointerCapture"));
+        assert!(VIEWER_JS.contains("pointermove"));
+        assert!(VIEWER_JS.contains("pointerup"));
+        assert!(VIEWER_JS.contains("pointercancel"));
+        assert!(VIEWER_JS.contains("addEventListener('load',layout"));
         assert!(
             theme
                 .lines()
