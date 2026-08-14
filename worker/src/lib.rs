@@ -23,6 +23,7 @@ mod components;
 mod ui;
 mod viewer;
 
+use ui::authorization::{AuthorizationPage, authorize_page};
 use ui::pages::{check_email_page, connect_page, home_page, install_page};
 use ui::response as ui_response;
 use viewer::{VIEWER_JS, viewer_page};
@@ -119,7 +120,8 @@ async fn handle(req: &mut Request, env: &Env) -> Result<Response> {
         return oauth_register(req, env).await;
     }
     if method == Method::Get && path == "/authorize" {
-        return authorize_response(&authorize_page(&url, env));
+        let page = authorization_page(&url, env);
+        return ui_response::authorization(authorize_page(&page).await);
     }
     if method == Method::Post && path == "/auth/request" {
         return auth_request(req, env, &url).await;
@@ -1027,20 +1029,19 @@ async fn call_tool(
     }
 }
 
-fn authorize_page(url: &Url, env: &Env) -> String {
-    let client_id = escape_html(&query(url, "client_id").unwrap_or_default());
-    let redirect_uri = escape_html(&query(url, "redirect_uri").unwrap_or_default());
-    let scope =
-        escape_html(&query(url, "scope").unwrap_or_else(|| "shares:read shares:write".to_string()));
-    let state = escape_html(&query(url, "state").unwrap_or_default());
-    let code_challenge = escape_html(&query(url, "code_challenge").unwrap_or_default());
-    let resource = escape_html(&query(url, "resource").unwrap_or_else(|| format!("{ORIGIN}/mcp")));
-    let turnstile = env.var("TURNSTILE_SITE_KEY").ok().map_or_else(String::new, |key| {
-        format!(r#"<div class="cf-turnstile" data-sitekey="{}"></div><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>"#, escape_html(&key.to_string()))
-    });
-    format!(
-        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorize Footon</title><link rel="stylesheet" href="/style.css?v=20260814-80ch-drag-3"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-md px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / AUTHORIZE</p><h1 class="mt-2 text-2xl font-semibold">Authorize agent access</h1><p class="mt-2 text-sm text-muted">Requested scopes: <code>{scope}</code></p><form class="mt-5 grid gap-3" method="post" action="/auth/request"><label class="grid gap-1 text-xs font-medium">Email<input class="border border-line bg-paper px-3 py-2 text-sm" name="email" type="email" autocomplete="email" required></label><input type="hidden" name="client_id" value="{client_id}"><input type="hidden" name="redirect_uri" value="{redirect_uri}"><input type="hidden" name="scope" value="{scope}"><input type="hidden" name="state" value="{state}"><input type="hidden" name="code_challenge" value="{code_challenge}"><input type="hidden" name="code_challenge_method" value="S256"><input type="hidden" name="resource" value="{resource}">{turnstile}<button class="border border-ink bg-ink px-3 py-2 text-sm text-paper" type="submit">Send magic link</button></form></main></body></html>"#
-    )
+fn authorization_page(url: &Url, env: &Env) -> AuthorizationPage {
+    AuthorizationPage {
+        client_id: query(url, "client_id").unwrap_or_default(),
+        redirect_uri: query(url, "redirect_uri").unwrap_or_default(),
+        scope: query(url, "scope").unwrap_or_else(|| "shares:read shares:write".to_string()),
+        state: query(url, "state").unwrap_or_default(),
+        code_challenge: query(url, "code_challenge").unwrap_or_default(),
+        resource: query(url, "resource").unwrap_or_else(|| format!("{ORIGIN}/mcp")),
+        turnstile_site_key: env
+            .var("TURNSTILE_SITE_KEY")
+            .ok()
+            .map(|key| key.to_string()),
+    }
 }
 
 fn escape_html(value: &str) -> String {
@@ -1200,16 +1201,6 @@ fn json_response_with_status<T: Serialize>(value: &T, status: u16) -> Result<Res
 fn html_response(html: &str) -> Result<Response> {
     let mut response = Response::from_html(add_favicon(html))?;
     security_headers(&mut response)?;
-    Ok(response)
-}
-
-fn authorize_response(html: &str) -> Result<Response> {
-    let mut response = Response::from_html(add_favicon(html))?;
-    security_headers(&mut response)?;
-    response.headers_mut().set(
-        "Content-Security-Policy",
-        "default-src 'none'; style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; script-src https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src https://challenges.cloudflare.com; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
-    )?;
     Ok(response)
 }
 
@@ -1418,6 +1409,40 @@ mod tests {
         assert!(html.contains("<link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\">"));
         assert!(ICON.contains("#72e39f"));
         assert!(ICON.contains("A footprint pressed onto a folded sheet of paper"));
+    }
+
+    #[tokio::test]
+    async fn authorization_page_preserves_form_contract_and_escapes_values() {
+        let html = authorize_page(&AuthorizationPage {
+            client_id: "client\" autofocus=\"true".to_string(),
+            redirect_uri: "https://agent.example/callback?x=<unsafe>".to_string(),
+            scope: "shares:read shares:write".to_string(),
+            state: "state&value".to_string(),
+            code_challenge: "challenge".to_string(),
+            resource: "https://footon.dev/mcp".to_string(),
+            turnstile_site_key: Some("site-key".to_string()),
+        })
+        .await
+        .expect("authorization page")
+        .render(&Cx::default());
+
+        assert!(html.contains("method=\"post\" action=\"/auth/request\""));
+        for name in [
+            "client_id",
+            "redirect_uri",
+            "scope",
+            "state",
+            "code_challenge",
+            "code_challenge_method",
+            "resource",
+        ] {
+            assert!(html.contains(&format!("name=\"{name}\"")));
+        }
+        assert!(html.contains("data-sitekey=\"site-key\""));
+        assert!(html.contains("https://challenges.cloudflare.com/turnstile/v0/api.js"));
+        assert!(html.contains("client&quot; autofocus=&quot;true"));
+        assert!(html.contains("state&amp;value"));
+        assert!(!html.contains("value=\"client\" autofocus=\"true\""));
     }
 
     #[test]

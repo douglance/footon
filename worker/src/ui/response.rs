@@ -3,6 +3,7 @@ use worker::{Response, Result};
 
 use crate::security_headers;
 
+#[derive(Clone, Copy)]
 pub(crate) enum HtmlPolicy {
     Standard,
     Authorization,

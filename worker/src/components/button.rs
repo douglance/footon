@@ -114,6 +114,7 @@ const BASE: &str = "inline-flex shrink-0 items-center justify-center border \
 /// }
 /// ```
 #[must_use]
+#[allow(dead_code)]
 pub fn button_variants(variant: ButtonVariant, size: ButtonSize) -> String {
     format!("{BASE} {} {}", variant.classes(), size.classes())
 }
