@@ -26,7 +26,8 @@ mod viewer;
 use ui::authorization::{AuthorizationPage, authorize_page};
 use ui::pages::{check_email_page, connect_page, home_page, install_page};
 use ui::response as ui_response;
-use viewer::{VIEWER_JS, viewer_page};
+use ui::thread::viewer_page;
+use viewer::VIEWER_JS;
 
 const STYLE: &str = include_str!(concat!(env!("OUT_DIR"), "/tailwind.css"));
 const ICON: &str = include_str!("../../assets/footon-icon.svg");
@@ -313,7 +314,7 @@ async fn public_share(req: &Request, env: &Env, id: &str) -> Result<Response> {
                 .url()?
                 .query_pairs()
                 .any(|(key, value)| key == "view" && value == "text");
-            html_response(&viewer_page(&record, text_mode))
+            ui_response::standard(viewer_page(&record, text_mode).await)
         }
     }
 }
@@ -1198,20 +1199,6 @@ fn json_response_with_status<T: Serialize>(value: &T, status: u16) -> Result<Res
     Ok(response)
 }
 
-fn html_response(html: &str) -> Result<Response> {
-    let mut response = Response::from_html(add_favicon(html))?;
-    security_headers(&mut response)?;
-    Ok(response)
-}
-
-fn add_favicon(html: &str) -> String {
-    html.replacen(
-        "</title>",
-        "</title><link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\">",
-        1,
-    )
-}
-
 fn markdown_response(markdown: &str) -> Result<Response> {
     let mut response = Response::ok(markdown.to_string())?;
     response
@@ -1445,8 +1432,8 @@ mod tests {
         assert!(!html.contains("value=\"client\" autofocus=\"true\""));
     }
 
-    #[test]
-    fn rendered_view_uses_flat_teletype_rows() {
+    #[tokio::test]
+    async fn rendered_view_uses_flat_teletype_rows() {
         let record = ShareRecord {
             id: "abcdefghijklmnopqrst".to_string(),
             owner_id: "email:test@example.com".to_string(),
@@ -1464,12 +1451,15 @@ mod tests {
             created_at: chrono::DateTime::UNIX_EPOCH,
             revoked_at: None,
         };
-        let html = viewer_page(&record, false);
+        let html = viewer_page(&record, false)
+            .await
+            .expect("viewer page")
+            .render(&Cx::default());
         assert!(html.contains("<body class=\"viewer-page\">"));
         assert!(html.contains("<article class=\"viewer\">"));
         assert!(html.contains("<div class=\"minimap-frame\">"));
-        assert!(html.contains("/style.css?v=20260814-80ch-drag-3"));
-        assert!(html.contains("/viewer.js?v=20260814-80ch-drag-3"));
+        assert!(html.contains("/style.css?v=20260814-topcoat-1"));
+        assert!(html.contains("/viewer.js?v=20260814-topcoat-1"));
         assert!(html.contains("<div class=\"thread\">"));
         assert!(html.contains("<section class=\"call-block\">"));
         assert!(html.contains("class=\"message assistant\""));

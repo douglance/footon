@@ -1,31 +1,13 @@
-use footon_core::markdown::render_markdown_html;
-use footon_core::model::{Message, Role, ShareRecord};
-use footon_core::safety::compact_messages;
-
 use crate::escape_html;
+use footon_core::markdown::render_markdown_html;
+use footon_core::model::{Message, Role};
 
-pub(crate) fn viewer_page(record: &ShareRecord, text_mode: bool) -> String {
-    let messages = compact_messages(&record.document.messages);
-    let title = escape_html(&record.title);
-    let checked = if text_mode { " checked" } else { "" };
-    let header = format!(
-        "<input class=\"thread-view-toggle\" id=\"thread-view\" type=\"checkbox\" aria-label=\"Show source text for all messages\"{checked}><div class=\"meta\"><div class=\"document-heading\"><h1>{title}</h1><p>Shared {}. {} redactions.</p></div><div class=\"toolbar\" role=\"toolbar\" aria-label=\"Thread display controls\"><div class=\"role-filters\" aria-label=\"Message filters\"><input class=\"filter-input\" id=\"filter-user\" type=\"checkbox\" data-filter-role=\"user\" checked><label class=\"filter-toggle user\" for=\"filter-user\">USER</label><input class=\"filter-input\" id=\"filter-agent\" type=\"checkbox\" data-filter-role=\"assistant\" checked><label class=\"filter-toggle assistant\" for=\"filter-agent\">AGENT</label><input class=\"filter-input\" id=\"filter-tools\" type=\"checkbox\" data-filter-role=\"tool\" checked><label class=\"filter-toggle tool\" for=\"filter-tools\">TOOL</label></div><label class=\"view-control\" for=\"thread-view\" title=\"Toggle rendered or source text\"><span class=\"view-icon rendered-icon\" aria-hidden=\"true\"><svg viewBox=\"0 0 16 16\" focusable=\"false\"><path d=\"M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4S1.5 8 1.5 8Z\"/><circle cx=\"8\" cy=\"8\" r=\"1.75\"/></svg></span><span class=\"view-icon text-icon\" aria-hidden=\"true\"><svg viewBox=\"0 0 16 16\" focusable=\"false\"><path d=\"m5.5 4-4 4 4 4M10.5 4l4 4-4 4\"/></svg></span></label></div></div>",
-        format_date(record.created_at.date_naive()),
-        record.document.report.redactions,
-    );
-    let transcript = render_transcript(&messages);
-    format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title} · footon</title><link rel=\"stylesheet\" href=\"/style.css?v=20260814-80ch-drag-3\"></head><body class=\"viewer-page\"><header><a class=\"brand\" href=\"/\">footon</a></header><main><article class=\"viewer\">{header}{}<div class=\"thread\">{}</div></article></main><script src=\"/viewer.js?v=20260814-80ch-drag-3\" defer></script></body></html>",
-        transcript.map, transcript.messages,
-    )
+pub(crate) struct Transcript {
+    pub(crate) map: String,
+    pub(crate) messages: String,
 }
 
-struct Transcript {
-    map: String,
-    messages: String,
-}
-
-fn render_transcript(messages: &[Message]) -> Transcript {
+pub(crate) fn render_transcript(messages: &[Message]) -> Transcript {
     let mut rendered = String::new();
     let mut markers = String::new();
     let mut index = 0;
@@ -124,31 +106,6 @@ fn render_marker(message: &Message, index: usize) -> String {
         )
     }
 }
-
-fn format_date(date: chrono::NaiveDate) -> String {
-    const MONTHS: [&str; 12] = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ];
-    format!(
-        "{} {}, {}",
-        MONTHS[date.month0() as usize],
-        date.day(),
-        date.year()
-    )
-}
-
-use chrono::Datelike;
 
 pub(crate) const VIEWER_JS: &str = r"
 const rail=document.querySelector('.minimap');const map=document.querySelector('.minimap ol');const markers=[...document.querySelectorAll('.map-marker')];const targets=markers.map(marker=>({marker,message:document.getElementById(marker.getAttribute('href')?.slice(1)||marker.dataset.messageId)}));const filters=[...document.querySelectorAll('[data-filter-role]')];const canvas=document.createElement('canvas');const context=canvas.getContext('2d',{alpha:true});const texture=document.createElement('canvas');const textureContext=texture.getContext('2d',{alpha:true});let scale=1,frame=0,dragging=false;
