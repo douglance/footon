@@ -1,17 +1,22 @@
 use chrono::Datelike;
-use footon_core::{model::ShareRecord, safety::compact_messages};
+use footon_core::{
+    markdown::render_markdown_html,
+    model::{Message, Role, ShareRecord},
+    safety::compact_messages,
+};
 use topcoat::{
     Result,
     context::Cx,
-    view::{Unescaped, view},
+    view::{Unescaped, component, view},
 };
 
-use crate::{ui::layout::ASSET_VERSION, viewer::render_transcript};
+use crate::ui::layout::ASSET_VERSION;
+
+pub(crate) const VIEWER_JS: &str = include_str!("../viewer.js");
 
 pub(crate) async fn viewer_page(record: &ShareRecord, text_mode: bool) -> Result {
     let cx = &Cx::default();
     let messages = compact_messages(&record.document.messages);
-    let transcript = render_transcript(&messages);
     let stylesheet = format!("/style.css?v={ASSET_VERSION}");
     let script = format!("/viewer.js?v={ASSET_VERSION}");
     let page_title = format!("{} · footon", record.title);
@@ -20,11 +25,6 @@ pub(crate) async fn viewer_page(record: &ShareRecord, text_mode: bool) -> Result
         format_date(record.created_at.date_naive()),
         record.document.report.redactions,
     );
-
-    // The legacy transcript renderer escapes plain text and emits only sanitized Markdown HTML.
-    // These two wrappers disappear when transcript rows move to typed views in the next slice.
-    let minimap = Unescaped::new_unchecked(transcript.map);
-    let rows = Unescaped::new_unchecked(transcript.messages);
 
     view! {
         cx =>
@@ -77,13 +77,181 @@ pub(crate) async fn viewer_page(record: &ShareRecord, text_mode: bool) -> Result
                                 </label>
                             </div>
                         </div>
-                        (minimap)
-                        <div class="thread">(rows)</div>
+                        thread_minimap(messages: &messages)
+                        thread_rows(messages: &messages)
                     </article>
                 </main>
                 <script src=(script) defer="defer"></script>
             </body>
         </html>
+    }
+}
+
+enum ThreadGroup<'a> {
+    Call {
+        message: &'a Message,
+        activity: &'a [Message],
+        index: usize,
+    },
+    Activity {
+        messages: &'a [Message],
+        index: usize,
+    },
+    Message {
+        message: &'a Message,
+        index: usize,
+    },
+}
+
+fn group_messages(messages: &[Message]) -> Vec<ThreadGroup<'_>> {
+    let mut groups = Vec::new();
+    let mut index = 0;
+    while index < messages.len() {
+        let message = &messages[index];
+        if message.role == Role::Assistant {
+            let end = activity_end(messages, index + 1);
+            groups.push(ThreadGroup::Call {
+                message,
+                activity: &messages[index + 1..end],
+                index,
+            });
+            index = end;
+            continue;
+        }
+        let end = activity_end(messages, index);
+        if end > index {
+            groups.push(ThreadGroup::Activity {
+                messages: &messages[index..end],
+                index,
+            });
+            index = end;
+            continue;
+        }
+        groups.push(ThreadGroup::Message { message, index });
+        index += 1;
+    }
+    groups
+}
+
+fn activity_end(messages: &[Message], start: usize) -> usize {
+    let mut end = start;
+    while messages
+        .get(end)
+        .is_some_and(|message| matches!(message.role, Role::Tool | Role::File))
+    {
+        end += 1;
+    }
+    end
+}
+
+#[component]
+async fn thread_rows(messages: &[Message]) -> Result {
+    let groups = group_messages(messages);
+    view! {
+        <div class="thread">
+            for group in groups {
+                match group {
+                    ThreadGroup::Call { message, activity, index } => {
+                        <section class="call-block">
+                            message_row(message: message, index: index)
+                            activity_run(messages: activity, start: index + 1)
+                        </section>
+                    }
+                    ThreadGroup::Activity { messages, index } => {
+                        activity_run(messages: messages, start: index)
+                    }
+                    ThreadGroup::Message { message, index } => {
+                        message_row(message: message, index: index)
+                    }
+                }
+            }
+        </div>
+    }
+}
+
+#[component]
+async fn activity_run(messages: &[Message], start: usize) -> Result {
+    view! {
+        if !messages.is_empty() {
+            <ol class="activity-run" aria-label="Tool and file activity">
+                for (offset, message) in messages.iter().enumerate() {
+                    message_row(message: message, index: start + offset)
+                }
+            </ol>
+        }
+    }
+}
+
+#[component]
+async fn message_row(message: &Message, index: usize) -> Result {
+    let ordinal = index + 1;
+    let ordinal_text = format!("{ordinal:03}");
+    let role = message.role.css_class();
+    let label = message.role.label();
+    let id = format!("message-{ordinal}");
+    let href = format!("#{id}");
+    let link_label = format!("Link to message {ordinal}");
+    let region_label = format!(
+        "{} {ordinal}",
+        if message.role == Role::Assistant {
+            "agent"
+        } else {
+            role
+        }
+    );
+
+    view! {
+        <section class=(format!("message {role}")) id=(id) aria-label=(region_label)>
+            <a class="ordinal" href=(href) aria-label=(link_label)>(ordinal_text)</a>
+            <span class="role">(label)</span>
+            if matches!(message.role, Role::Tool | Role::File) {
+                <p>(&message.text)</p>
+            } else {
+                let rendered = render_markdown_html(message);
+                // `RenderedMarkdownHtml` strips raw HTML and unsafe URL schemes in footon-core.
+                let rendered = Unescaped::new_unchecked(rendered.as_str().to_string());
+                <div class="message-body">
+                    <div class="rendered">(rendered)</div>
+                    <pre class="message-text">(&message.text)</pre>
+                </div>
+            }
+        </section>
+    }
+}
+
+#[component]
+async fn thread_minimap(messages: &[Message]) -> Result {
+    view! {
+        <div class="minimap-frame">
+            <nav class="minimap" aria-label="Thread minimap">
+                <div class="map-viewport" aria-hidden="true"></div>
+                <ol>
+                    for (index, message) in messages.iter().enumerate() {
+                        minimap_marker(message: message, index: index)
+                    }
+                </ol>
+            </nav>
+        </div>
+    }
+}
+
+#[component]
+async fn minimap_marker(message: &Message, index: usize) -> Result {
+    let ordinal = index + 1;
+    let role = message.role.css_class();
+    let message_id = format!("message-{ordinal}");
+    view! {
+        <li>
+            if message.role == Role::User {
+                <a
+                    class="map-marker user"
+                    href=(format!("#{message_id}"))
+                    aria-label=(format!("Jump to user message {ordinal}"))
+                ></a>
+            } else {
+                <span class=(format!("map-marker {role}")) data-message-id=(message_id)></span>
+            }
+        </li>
     }
 }
 

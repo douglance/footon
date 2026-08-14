@@ -21,13 +21,11 @@ use topcoat::router::{
 
 mod components;
 mod ui;
-mod viewer;
 
 use ui::authorization::{AuthorizationPage, authorize_page};
 use ui::pages::{check_email_page, connect_page, home_page, install_page};
 use ui::response as ui_response;
-use ui::thread::viewer_page;
-use viewer::VIEWER_JS;
+use ui::thread::{VIEWER_JS, viewer_page};
 
 const STYLE: &str = include_str!(concat!(env!("OUT_DIR"), "/tailwind.css"));
 const ICON: &str = include_str!("../../assets/footon-icon.svg");
@@ -1043,15 +1041,6 @@ fn authorization_page(url: &Url, env: &Env) -> AuthorizationPage {
             .ok()
             .map(|key| key.to_string()),
     }
-}
-
-fn escape_html(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
 }
 
 fn authorization_server_metadata() -> serde_json::Value {
