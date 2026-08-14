@@ -1592,7 +1592,31 @@ mod tests {
         }
         assert_eq!(
             document.select(&selector(".thread-demo .message")).count(),
-            5
+            15
+        );
+        assert_eq!(
+            document
+                .select(&selector(".thread-demo[data-thread-scroll=\"true\"]"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            document.select(&selector(".thread-demo .minimap")).count(),
+            1
+        );
+        assert_eq!(
+            document
+                .select(&selector(".thread-demo .filter-input"))
+                .count(),
+            3
+        );
+        assert_eq!(
+            document
+                .select(&selector(
+                    "script[src=\"/viewer.js?v=20260814-live-demo-1\"]",
+                ))
+                .count(),
+            1
         );
         assert!(
             commands
@@ -1631,7 +1655,7 @@ mod tests {
                 .select(&selector("link[rel=stylesheet]"))
                 .next()
                 .and_then(|node| node.value().attr("href")),
-            Some("/style.css?v=20260814-agent-first-1")
+            Some("/style.css?v=20260814-live-demo-1")
         );
     }
 
@@ -1743,14 +1767,14 @@ mod tests {
                 .select(&selector("link[rel=stylesheet]"))
                 .next()
                 .and_then(|node| node.value().attr("href")),
-            Some("/style.css?v=20260814-agent-first-1")
+            Some("/style.css?v=20260814-live-demo-1")
         );
         assert_eq!(
             document
                 .select(&selector("script[src]"))
                 .next()
                 .and_then(|node| node.value().attr("src")),
-            Some("/viewer.js?v=20260814-agent-first-1")
+            Some("/viewer.js?v=20260814-live-demo-1")
         );
     }
 
@@ -1843,7 +1867,9 @@ mod tests {
             "pointermove",
             "pointerup",
             "pointercancel",
-            "addEventListener('load',layout",
+            "viewer.dataset.threadScroll",
+            "scrollTarget.addEventListener(\"scroll\"",
+            "addEventListener(\"load\", layout",
         ] {
             assert!(VIEWER_JS.contains(contract));
         }

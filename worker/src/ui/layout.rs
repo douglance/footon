@@ -3,7 +3,7 @@ use topcoat::{
     view::{View, component, view},
 };
 
-pub(crate) const ASSET_VERSION: &str = "20260814-agent-first-1";
+pub(crate) const ASSET_VERSION: &str = "20260814-live-demo-1";
 
 #[component]
 pub(crate) async fn page_layout(

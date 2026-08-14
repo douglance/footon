@@ -113,20 +113,42 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; back
 .landing-install { margin: 28px 0 0; padding: 14px 16px; font-size: 11px; }
 .landing-proof { margin-top: 12px; font-size: 8px; }
 .thread-demo {
+  --thread-demo-height: clamp(430px, calc(100vh - 170px), 520px);
+  position: relative;
+  height: var(--thread-demo-height);
   min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border-block: 1px solid var(--line);
+  padding-right: 24px;
   background: rgba(14, 19, 16, .54);
 }
-.thread-demo-heading {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 17px 14px 13px;
-  border-bottom: 1px solid var(--line);
+.thread-demo .meta {
+  top: 0;
+  margin-bottom: 0;
+  padding: 12px 14px 10px;
 }
-.thread-demo-heading p { margin: 0; color: var(--muted); font-size: 9px; }
-.thread-demo-heading h2 { margin: 3px 0 0; font-size: 16px; letter-spacing: -.02em; }
+.thread-demo .meta h1 { font-size: 16px; }
+.thread-demo .meta p { font-size: 9px; }
+.thread-demo .minimap-frame {
+  position: sticky;
+  top: 0;
+  inset-inline: auto;
+  width: 100%;
+  max-width: none;
+  height: 0;
+  margin: 0;
+}
+.thread-demo .minimap {
+  inset-block: auto;
+  top: 0;
+  right: -24px;
+  width: 24px;
+  height: var(--thread-demo-height);
+}
+.thread-demo .minimap ol { height: 100%; }
 .thread-demo .thread { padding: 8px 4px 10px; }
 .thread-demo .message { grid-template-columns: 42px 64px minmax(0, 1fr); padding: 7px 8px; }
 .thread-demo .message-body p,
@@ -448,8 +470,13 @@ a:hover { color: #a3f6c1; }
   }
   .landing-intro h1 { max-width: 10ch; font-size: clamp(38px, 13vw, 54px); }
   .landing-lede { font-size: 13px; }
-  .thread-demo-heading { align-items: start; }
-  .thread-demo-heading > p { max-width: 14ch; text-align: right; }
+  .thread-demo {
+    --thread-demo-height: 440px;
+    padding-right: 6px;
+    scrollbar-gutter: auto;
+  }
+  .thread-demo .meta { padding-inline: 8px; }
+  .thread-demo .minimap { right: -6px; width: 6px; }
   .thread-demo .message { grid-template-columns: 34px 54px minmax(0, 1fr); padding-inline: 4px; }
   .thread-demo .message-body p,
   .thread-demo .message > p { font-size: 10.5px; }

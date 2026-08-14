@@ -25,7 +25,6 @@ pub(crate) async fn thread_demo(messages: &[Message]) -> Result {
             summary: &summary,
             text_mode: false,
             class: "viewer thread-demo",
-            label: "Actual Footon output example",
             scroll_container: true,
         )
         <script src=(script) defer="defer"></script>
@@ -64,7 +63,6 @@ pub(crate) async fn viewer_page(record: &ShareRecord, text_mode: bool) -> Result
                         summary: &shared,
                         text_mode: text_mode,
                         class: "viewer",
-                        label: "Shared Footon thread",
                         scroll_container: false,
                     )
                 </main>
@@ -81,9 +79,13 @@ async fn thread_view(
     summary: &str,
     text_mode: bool,
     class: &str,
-    label: &str,
     scroll_container: bool,
 ) -> Result {
+    let label = if scroll_container {
+        "Actual Footon output example"
+    } else {
+        "Shared Footon thread"
+    };
     view! {
         <article
             class=(class)
@@ -97,6 +99,7 @@ async fn thread_view(
                 aria-label="Show source text for all messages"
                 checked=(text_mode)
             >
+            thread_minimap(messages: messages)
             <div class="meta">
                 <div class="document-heading">
                     <h1>(title)</h1>
@@ -126,7 +129,6 @@ async fn thread_view(
                     </label>
                 </div>
             </div>
-            thread_minimap(messages: messages)
             thread_rows(messages: messages)
         </article>
     }
