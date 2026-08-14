@@ -126,6 +126,7 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; back
   box-shadow: none;
   scroll-margin-top: 52px;
 }
+.message:hover, .message:focus-within { background: rgba(114,227,159,.055); }
 .message-body { min-width: 0; max-width: 78ch; }
 .message-body > :first-child { margin-top: 0; }
 .message-body > :last-child { margin-bottom: 0; }
@@ -197,8 +198,9 @@ pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; back
 .message.file .role { color: #c6a4ef; }
 .minimap {
   position: fixed;
+  z-index: 20;
   inset-block: 0;
-  width: 48px;
+  width: 24px;
   margin-left: min(992px, calc(100vw - 84px));
   font-size: 9px;
 }
@@ -228,7 +230,7 @@ a:hover { color: #a3f6c1; }
   .role { gap: 5px; padding-left: 4px; }
   .message.tool, .message.file { grid-template-columns: 36px 60px minmax(0, 1fr); }
   .message.tool p, .message.file p { font-size: 10.5px; }
-  .minimap { right: 5px; width: 10px; margin-left: 0; }
+  .minimap { right: 5px; width: 6px; margin-left: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }

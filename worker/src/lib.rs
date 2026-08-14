@@ -1418,6 +1418,10 @@ mod tests {
         assert!(theme.contains("grid-template-columns: 44px 72px minmax(0, 1fr)"));
         assert!(theme.contains("color-scheme: dark"));
         assert!(theme.contains("[hidden] { display: none !important; }"));
+        assert!(theme.contains("z-index: 20;"));
+        assert!(theme.contains("width: 24px;"));
+        assert!(theme.contains("width: 6px;"));
+        assert!(theme.contains(".message:hover, .message:focus-within"));
         assert!(!theme.contains(".message.user"));
         assert!(
             theme
