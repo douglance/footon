@@ -1,6 +1,6 @@
 fn main() {
     topcoat::tailwind::BuildConfig::new()
-        .input("src/theme.css")
+        .input("styles.css")
         .cwd(".")
         .render()
         .expect("Tailwind stylesheet generation failed");

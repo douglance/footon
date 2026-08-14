@@ -19,6 +19,7 @@ use topcoat::router::{
     Body as TopcoatBody, Method as HttpMethod, Path, RouteFn, RouteFuture, Router,
 };
 
+mod components;
 mod viewer;
 
 use viewer::{VIEWER_JS, viewer_page};
