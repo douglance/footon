@@ -14,6 +14,24 @@ use crate::ui::layout::ASSET_VERSION;
 
 pub(crate) const VIEWER_JS: &str = include_str!("../viewer.js");
 
+#[component]
+pub(crate) async fn thread_demo(messages: &[Message]) -> Result {
+    let summary = format!("{} messages · 4 redactions", messages.len());
+    let script = format!("/viewer.js?v={ASSET_VERSION}");
+    view! {
+        thread_view(
+            messages: messages,
+            title: "Deployment review",
+            summary: &summary,
+            text_mode: false,
+            class: "viewer thread-demo",
+            label: "Actual Footon output example",
+            scroll_container: true,
+        )
+        <script src=(script) defer="defer"></script>
+    }
+}
+
 pub(crate) async fn viewer_page(record: &ShareRecord, text_mode: bool) -> Result {
     let cx = &Cx::default();
     let messages = compact_messages(&record.document.messages);
@@ -40,50 +58,77 @@ pub(crate) async fn viewer_page(record: &ShareRecord, text_mode: bool) -> Result
             <body class="viewer-page">
                 <header><a class="brand" href="/">"footon"</a></header>
                 <main>
-                    <article class="viewer">
-                        <input
-                            class="thread-view-toggle"
-                            id="thread-view"
-                            type="checkbox"
-                            aria-label="Show source text for all messages"
-                            checked=(text_mode)
-                        >
-                        <div class="meta">
-                            <div class="document-heading">
-                                <h1>(&record.title)</h1>
-                                <p>(shared)</p>
-                            </div>
-                            <div class="toolbar" role="toolbar" aria-label="Thread display controls">
-                                <div class="role-filters" aria-label="Message filters">
-                                    <input class="filter-input" id="filter-user" type="checkbox" data-filter-role="user" checked="checked">
-                                    <label class="filter-toggle user" for="filter-user">"USER"</label>
-                                    <input class="filter-input" id="filter-agent" type="checkbox" data-filter-role="assistant" checked="checked">
-                                    <label class="filter-toggle assistant" for="filter-agent">"AGENT"</label>
-                                    <input class="filter-input" id="filter-tools" type="checkbox" data-filter-role="tool" checked="checked">
-                                    <label class="filter-toggle tool" for="filter-tools">"TOOL"</label>
-                                </div>
-                                <label class="view-control" for="thread-view" title="Toggle rendered or source text">
-                                    <span class="view-icon rendered-icon" aria-hidden="true">
-                                        <svg viewBox="0 0 16 16" focusable="false">
-                                            <path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4S1.5 8 1.5 8Z"></path>
-                                            <circle cx="8" cy="8" r="1.75"></circle>
-                                        </svg>
-                                    </span>
-                                    <span class="view-icon text-icon" aria-hidden="true">
-                                        <svg viewBox="0 0 16 16" focusable="false">
-                                            <path d="m5.5 4-4 4 4 4M10.5 4l4 4-4 4"></path>
-                                        </svg>
-                                    </span>
-                                </label>
-                            </div>
-                        </div>
-                        thread_minimap(messages: &messages)
-                        thread_rows(messages: &messages)
-                    </article>
+                    thread_view(
+                        messages: &messages,
+                        title: &record.title,
+                        summary: &shared,
+                        text_mode: text_mode,
+                        class: "viewer",
+                        label: "Shared Footon thread",
+                        scroll_container: false,
+                    )
                 </main>
                 <script src=(script) defer="defer"></script>
             </body>
         </html>
+    }
+}
+
+#[component]
+async fn thread_view(
+    messages: &[Message],
+    title: &str,
+    summary: &str,
+    text_mode: bool,
+    class: &str,
+    label: &str,
+    scroll_container: bool,
+) -> Result {
+    view! {
+        <article
+            class=(class)
+            aria-label=(label)
+            data-thread-scroll=(scroll_container.to_string())
+        >
+            <input
+                class="thread-view-toggle"
+                id="thread-view"
+                type="checkbox"
+                aria-label="Show source text for all messages"
+                checked=(text_mode)
+            >
+            <div class="meta">
+                <div class="document-heading">
+                    <h1>(title)</h1>
+                    <p>(summary)</p>
+                </div>
+                <div class="toolbar" role="toolbar" aria-label="Thread display controls">
+                    <div class="role-filters" aria-label="Message filters">
+                        <input class="filter-input" id="filter-user" type="checkbox" data-filter-role="user" checked="checked">
+                        <label class="filter-toggle user" for="filter-user">"USER"</label>
+                        <input class="filter-input" id="filter-agent" type="checkbox" data-filter-role="assistant" checked="checked">
+                        <label class="filter-toggle assistant" for="filter-agent">"AGENT"</label>
+                        <input class="filter-input" id="filter-tools" type="checkbox" data-filter-role="tool" checked="checked">
+                        <label class="filter-toggle tool" for="filter-tools">"TOOL"</label>
+                    </div>
+                    <label class="view-control" for="thread-view" title="Toggle rendered or source text">
+                        <span class="view-icon rendered-icon" aria-hidden="true">
+                            <svg viewBox="0 0 16 16" focusable="false">
+                                <path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4S1.5 8 1.5 8Z"></path>
+                                <circle cx="8" cy="8" r="1.75"></circle>
+                            </svg>
+                        </span>
+                        <span class="view-icon text-icon" aria-hidden="true">
+                            <svg viewBox="0 0 16 16" focusable="false">
+                                <path d="m5.5 4-4 4 4 4M10.5 4l4 4-4 4"></path>
+                            </svg>
+                        </span>
+                    </label>
+                </div>
+            </div>
+            thread_minimap(messages: messages)
+            thread_rows(messages: messages)
+        </article>
     }
 }
 
@@ -173,11 +218,11 @@ async fn thread_rows(messages: &[Message]) -> Result {
 async fn activity_run(messages: &[Message], start: usize) -> Result {
     view! {
         if !messages.is_empty() {
-            <ol class="activity-run" aria-label="Tool and file activity">
+            <div class="activity-run" role="group" aria-label="Tool and file activity">
                 for (offset, message) in messages.iter().enumerate() {
                     message_row(message: message, index: start + offset)
                 }
-            </ol>
+            </div>
         }
     }
 }
@@ -190,7 +235,7 @@ async fn message_row(message: &Message, index: usize) -> Result {
     let label = message.role.label();
     let id = format!("message-{ordinal}");
     let href = format!("#{id}");
-    let link_label = format!("Link to message {ordinal}");
+    let link_label = format!("{ordinal_text}, link to message {ordinal}");
     let region_label = format!(
         "{} {ordinal}",
         if message.role == Role::Assistant {

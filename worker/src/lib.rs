@@ -23,8 +23,11 @@ use topcoat::router::{
 mod components;
 mod ui;
 
-use ui::authorization::{AuthorizationPage, authorize_page};
-use ui::pages::{check_email_page, connect_page, home_page, install_page};
+use ui::authorization::{AuthorizationPage, authorization_markdown, authorize_page};
+use ui::pages::{
+    check_email_markdown, check_email_page, connect_markdown, connect_page, home_markdown,
+    home_page, install_markdown, install_page, llms_markdown,
+};
 use ui::response as ui_response;
 use ui::thread::{VIEWER_JS, viewer_page};
 
@@ -36,6 +39,7 @@ const REFRESH_TTL_SECONDS: i64 = 2_592_000;
 const CLIENT_TTL_SECONDS: i64 = 7_776_000;
 const CODE_TTL_SECONDS: i64 = 300;
 const MAGIC_TTL_SECONDS: i64 = 600;
+const ROBOTS: &str = "User-agent: *\nAllow: /\n";
 
 #[worker::event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -93,13 +97,34 @@ async fn handle(req: &mut Request, env: &Env) -> Result<Response> {
     let method = req.method();
 
     if method == Method::Get && path == "/" {
-        return ui_response::standard(home_page().await);
+        let accept = req.headers().get("Accept")?;
+        return ui_response::negotiated_standard(
+            accept.as_deref(),
+            home_page().await,
+            home_markdown(),
+        );
     }
     if method == Method::Get && path == "/install" {
-        return ui_response::standard(install_page().await);
+        let accept = req.headers().get("Accept")?;
+        return ui_response::negotiated_standard(
+            accept.as_deref(),
+            install_page().await,
+            install_markdown(),
+        );
     }
     if method == Method::Get && path == "/connect" {
-        return ui_response::standard(connect_page().await);
+        let accept = req.headers().get("Accept")?;
+        return ui_response::negotiated_standard(
+            accept.as_deref(),
+            connect_page().await,
+            connect_markdown(),
+        );
+    }
+    if method == Method::Get && path == "/llms.txt" {
+        return ui_response::markdown(llms_markdown());
+    }
+    if method == Method::Get && path == "/robots.txt" {
+        return plain_text_response(ROBOTS);
     }
     if method == Method::Get && path == "/style.css" {
         return css_response(STYLE);
@@ -121,7 +146,13 @@ async fn handle(req: &mut Request, env: &Env) -> Result<Response> {
     }
     if method == Method::Get && path == "/authorize" {
         let page = authorization_page(&url, env);
-        return ui_response::authorization(authorize_page(&page).await);
+        let markdown = authorization_markdown(&page);
+        let accept = req.headers().get("Accept")?;
+        return ui_response::negotiated_authorization(
+            accept.as_deref(),
+            authorize_page(&page).await,
+            &markdown,
+        );
     }
     if method == Method::Post && path == "/auth/request" {
         return auth_request(req, env, &url).await;
@@ -165,6 +196,8 @@ fn router() -> Router {
         (HttpMethod::GET, "/"),
         (HttpMethod::GET, "/install"),
         (HttpMethod::GET, "/connect"),
+        (HttpMethod::GET, "/llms.txt"),
+        (HttpMethod::GET, "/robots.txt"),
         (HttpMethod::GET, "/style.css"),
         (HttpMethod::GET, "/viewer.js"),
         (HttpMethod::GET, "/favicon.svg"),
@@ -434,7 +467,9 @@ async fn public_share(req: &Request, env: &Env, id: &str) -> Result<Response> {
     };
     match negotiate(req.headers().get("Accept")?.as_deref()) {
         None => Response::error("not acceptable", 406),
-        Some(ContentType::Markdown) => markdown_response(&messages_to_markdown(&record.document)),
+        Some(ContentType::Markdown) => {
+            ui_response::markdown(&messages_to_markdown(&record.document))
+        }
         Some(ContentType::Html) => {
             let text_mode = req
                 .url()?
@@ -685,7 +720,12 @@ async fn auth_request(req: &mut Request, env: &Env, url: &Url) -> Result<Respons
     if content_type.starts_with("application/json") {
         json_response(&AuthRequestResponse { ok: true })
     } else {
-        ui_response::standard(check_email_page().await)
+        let accept = req.headers().get("Accept")?;
+        ui_response::negotiated_standard(
+            accept.as_deref(),
+            check_email_page().await,
+            check_email_markdown(),
+        )
     }
 }
 
@@ -1336,19 +1376,6 @@ fn json_response_with_status<T: Serialize>(value: &T, status: u16) -> Result<Res
     Ok(response)
 }
 
-fn markdown_response(markdown: &str) -> Result<Response> {
-    let mut response = Response::ok(markdown.to_string())?;
-    response
-        .headers_mut()
-        .set("Content-Type", "text/markdown; charset=utf-8")?;
-    response.headers_mut().set("Vary", "Accept")?;
-    response.headers_mut().set("Cache-Control", "no-store")?;
-    response
-        .headers_mut()
-        .set("X-Content-Type-Options", "nosniff")?;
-    Ok(response)
-}
-
 fn css_response(css: &str) -> Result<Response> {
     let mut response = Response::ok(css.to_string())?;
     response
@@ -1360,6 +1387,15 @@ fn css_response(css: &str) -> Result<Response> {
     response
         .headers_mut()
         .set("X-Content-Type-Options", "nosniff")?;
+    Ok(response)
+}
+
+fn plain_text_response(text: &str) -> Result<Response> {
+    let mut response = Response::ok(text.to_string())?;
+    response
+        .headers_mut()
+        .set("Content-Type", "text/plain; charset=utf-8")?;
+    security_headers(&mut response)?;
     Ok(response)
 }
 
@@ -1546,11 +1582,18 @@ mod tests {
                 .expect("heading")
                 .text()
                 .collect::<String>(),
-            "Share an agent thread safely."
+            "Share the thread. Keep the secrets."
         );
-        assert!(page_text.contains("safe version of their current thread or transcript"));
-        assert!(page_text.contains("another person or agent"));
+        assert!(page_text.contains("You keep the raw transcript local"));
+        assert!(page_text.contains("publishes only the safe copy you approve"));
         assert!(page_text.contains("original transcript stays local"));
+        for role in ["USER", "AGENT", "TOOL", "FILE"] {
+            assert!(page_text.contains(role), "missing {role} demo row");
+        }
+        assert_eq!(
+            document.select(&selector(".thread-demo .message")).count(),
+            5
+        );
         assert!(
             commands
                 .iter()
@@ -1588,8 +1631,41 @@ mod tests {
                 .select(&selector("link[rel=stylesheet]"))
                 .next()
                 .and_then(|node| node.value().attr("href")),
-            Some("/style.css?v=20260814-topcoat-1")
+            Some("/style.css?v=20260814-agent-first-1")
         );
+    }
+
+    #[test]
+    fn every_browser_page_has_an_agent_first_markdown_version() {
+        let pages = [
+            home_markdown(),
+            install_markdown(),
+            connect_markdown(),
+            check_email_markdown(),
+        ];
+
+        for markdown in pages {
+            assert!(markdown.starts_with("# "));
+            assert!(markdown.contains("Footon"));
+        }
+        assert!(home_markdown().contains("## Actual Footon output"));
+        assert!(home_markdown().contains("## USER"));
+        assert!(home_markdown().contains("## AGENT"));
+
+        let authorization = authorization_markdown(&AuthorizationPage {
+            client_id: "private-client".to_string(),
+            redirect_uri: "https://agent.example/callback".to_string(),
+            scope: "shares:read shares:write".to_string(),
+            state: "private-state".to_string(),
+            code_challenge: "private-challenge".to_string(),
+            resource: "https://footon.dev/mcp".to_string(),
+            turnstile_site_key: None,
+        });
+        assert!(authorization.contains("shares:read shares:write"));
+        assert!(authorization.contains("https://footon.dev/mcp"));
+        assert!(!authorization.contains("private-client"));
+        assert!(!authorization.contains("private-state"));
+        assert!(!authorization.contains("private-challenge"));
     }
 
     #[tokio::test]
@@ -1667,14 +1743,14 @@ mod tests {
                 .select(&selector("link[rel=stylesheet]"))
                 .next()
                 .and_then(|node| node.value().attr("href")),
-            Some("/style.css?v=20260814-topcoat-1")
+            Some("/style.css?v=20260814-agent-first-1")
         );
         assert_eq!(
             document
                 .select(&selector("script[src]"))
                 .next()
                 .and_then(|node| node.value().attr("src")),
-            Some("/viewer.js?v=20260814-topcoat-1")
+            Some("/viewer.js?v=20260814-agent-first-1")
         );
     }
 
@@ -1714,7 +1790,7 @@ mod tests {
         assert_eq!(ordinal.value().attr("href"), Some("#message-1"));
         assert_eq!(
             ordinal.value().attr("aria-label"),
-            Some("Link to message 1")
+            Some("001, link to message 1")
         );
         assert_eq!(ordinal.text().collect::<String>(), "001");
         assert_eq!(
@@ -1756,11 +1832,12 @@ mod tests {
             assert!(theme.contains(contract));
         }
         assert!(!theme.contains(".message.user"));
-        assert!(
-            theme
-                .lines()
-                .all(|line| !line.trim_start().starts_with("border"))
-        );
+        let message_rule = theme
+            .split(".message {")
+            .nth(1)
+            .and_then(|rules| rules.split('}').next())
+            .expect("message CSS rule");
+        assert!(!message_rule.contains("border"));
         for contract in [
             "setPointerCapture",
             "pointermove",

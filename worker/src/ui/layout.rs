@@ -3,7 +3,7 @@ use topcoat::{
     view::{View, component, view},
 };
 
-pub(crate) const ASSET_VERSION: &str = "20260814-topcoat-1";
+pub(crate) const ASSET_VERSION: &str = "20260814-agent-first-1";
 
 #[component]
 pub(crate) async fn page_layout(
@@ -51,21 +51,6 @@ pub(crate) async fn page_shell(
 #[component]
 pub(crate) async fn eyebrow(text: &str) -> Result {
     view! { <p class="font-mono text-xs text-muted">(text)</p> }
-}
-
-#[component]
-pub(crate) async fn section(
-    title: &str,
-    #[default] id: Option<&str>,
-    class: &str,
-    #[default] child: View,
-) -> Result {
-    view! {
-        <section id=(id) class=(class)>
-            <h2 class="text-lg font-semibold">(title)</h2>
-            (child)
-        </section>
-    }
 }
 
 #[component]

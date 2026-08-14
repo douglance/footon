@@ -19,6 +19,22 @@ pub(crate) struct AuthorizationPage {
     pub(crate) turnstile_site_key: Option<String>,
 }
 
+pub(crate) fn authorization_markdown(data: &AuthorizationPage) -> String {
+    let scope = data
+        .scope
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, ':' | ' '))
+        .collect::<String>();
+    let resource = if data.resource == "https://footon.dev/mcp" {
+        data.resource.as_str()
+    } else {
+        "unrecognized resource; do not authorize"
+    };
+    format!(
+        "# Authorize Footon\n\nAn agent is requesting access to Footon. A human must open this authorization URL and complete passwordless email sign-in.\n\n- Requested scopes: `{scope}`\n- Protected resource: `{resource}`\n\nDo not forward OAuth state, PKCE material, or the email sign-in link.\n"
+    )
+}
+
 pub(crate) async fn authorize_page(data: &AuthorizationPage) -> Result {
     let cx = &Cx::default();
     view! {
