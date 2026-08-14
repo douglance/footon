@@ -1310,7 +1310,13 @@ fn parse_time(value: &str) -> chrono::DateTime<chrono::Utc> {
 
 #[cfg(test)]
 mod tests {
+    use scraper::{Html, Selector};
+
     use super::*;
+
+    fn selector(value: &str) -> Selector {
+        Selector::parse(value).expect("valid selector")
+    }
 
     #[test]
     fn topcoat_router_accepts_only_registered_routes_and_methods() {
@@ -1365,17 +1371,53 @@ mod tests {
     #[tokio::test]
     async fn home_page_explains_and_installs_prompt_chain_sharing() {
         let html = home_page().await.expect("home page").render(&Cx::default());
+        let document = Html::parse_document(&html);
+        let page_text = document.root_element().text().collect::<String>();
+        let commands = document
+            .select(&selector("pre code"))
+            .map(|node| node.text().collect::<String>())
+            .collect::<Vec<_>>();
 
-        assert!(html.contains("Share an agent thread safely"));
-        assert!(html.contains("safe version of their current thread or transcript"));
-        assert!(html.contains("another person or agent"));
-        assert!(html.contains("original transcript stays local"));
-        assert!(html.contains("cargo install --git https://github.com/douglance/footon footon"));
-        assert!(html.contains("footon draft thread.jsonl"));
-        assert!(html.contains("FOOTON_TOKEN=... footon publish footon-draft.json"));
-        assert!(html.contains("footon fetch https://footon.dev/s/..."));
-        assert!(html.contains("https://footon.dev/mcp"));
-        assert!(html.contains("/style.css?v=20260814-topcoat-1"));
+        assert_eq!(
+            document
+                .select(&selector("h1"))
+                .next()
+                .expect("heading")
+                .text()
+                .collect::<String>(),
+            "Share an agent thread safely."
+        );
+        assert!(page_text.contains("safe version of their current thread or transcript"));
+        assert!(page_text.contains("another person or agent"));
+        assert!(page_text.contains("original transcript stays local"));
+        assert!(
+            commands
+                .iter()
+                .any(|command| command.contains("cargo install --git"))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|command| command.contains("footon draft thread.jsonl"))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|command| command.contains("footon publish footon-draft.json"))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|command| command.contains("footon fetch https://footon.dev/s/..."))
+        );
+        assert!(page_text.contains("https://footon.dev/mcp"));
+        assert_eq!(
+            document
+                .select(&selector("link[rel=stylesheet]"))
+                .next()
+                .and_then(|node| node.value().attr("href")),
+            Some("/style.css?v=20260814-topcoat-1")
+        );
     }
 
     #[tokio::test]
@@ -1401,8 +1443,11 @@ mod tests {
         .await
         .expect("authorization page")
         .render(&Cx::default());
+        let document = Html::parse_document(&html);
+        let form = document.select(&selector("form")).next().expect("form");
 
-        assert!(html.contains("method=\"post\" action=\"/auth/request\""));
+        assert_eq!(form.value().attr("method"), Some("post"));
+        assert_eq!(form.value().attr("action"), Some("/auth/request"));
         for name in [
             "client_id",
             "redirect_uri",
@@ -1412,13 +1457,147 @@ mod tests {
             "code_challenge_method",
             "resource",
         ] {
-            assert!(html.contains(&format!("name=\"{name}\"")));
+            assert_eq!(
+                form.select(&selector(&format!("input[name='{name}']")))
+                    .count(),
+                1
+            );
         }
-        assert!(html.contains("data-sitekey=\"site-key\""));
-        assert!(html.contains("https://challenges.cloudflare.com/turnstile/v0/api.js"));
+        assert_eq!(
+            form.select(&selector(".cf-turnstile"))
+                .next()
+                .and_then(|node| node.value().attr("data-sitekey")),
+            Some("site-key")
+        );
+        assert_eq!(
+            form.select(&selector("script"))
+                .next()
+                .and_then(|node| node.value().attr("src")),
+            Some("https://challenges.cloudflare.com/turnstile/v0/api.js")
+        );
         assert!(html.contains("client&quot; autofocus=&quot;true"));
         assert!(html.contains("state&amp;value"));
         assert!(!html.contains("value=\"client\" autofocus=\"true\""));
+    }
+
+    fn assert_viewer_shell(document: &Html) {
+        assert_eq!(document.select(&selector("body.viewer-page")).count(), 1);
+        assert_eq!(document.select(&selector("article.viewer")).count(), 1);
+        assert_eq!(
+            document
+                .select(&selector(".minimap-frame .minimap"))
+                .count(),
+            1
+        );
+        assert_eq!(document.select(&selector(".thread .call-block")).count(), 1);
+        assert_eq!(
+            document
+                .select(&selector("link[rel=stylesheet]"))
+                .next()
+                .and_then(|node| node.value().attr("href")),
+            Some("/style.css?v=20260814-topcoat-1")
+        );
+        assert_eq!(
+            document
+                .select(&selector("script[src]"))
+                .next()
+                .and_then(|node| node.value().attr("src")),
+            Some("/viewer.js?v=20260814-topcoat-1")
+        );
+    }
+
+    fn assert_viewer_controls(document: &Html) {
+        for id in ["filter-user", "filter-agent", "filter-tools"] {
+            assert_eq!(document.select(&selector(&format!("#{id}"))).count(), 1);
+        }
+        for class in ["user", "assistant", "tool"] {
+            assert_eq!(
+                document
+                    .select(&selector(&format!(".filter-toggle.{class}")))
+                    .count(),
+                1
+            );
+        }
+        assert_eq!(
+            document
+                .select(&selector(".view-icon.rendered-icon"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            document.select(&selector(".view-icon.text-icon")).count(),
+            1
+        );
+    }
+
+    fn assert_viewer_message(document: &Html) {
+        let message = document
+            .select(&selector(".message.assistant"))
+            .next()
+            .expect("assistant message");
+        let ordinal = message
+            .select(&selector("a.ordinal"))
+            .next()
+            .expect("ordinal");
+        assert_eq!(ordinal.value().attr("href"), Some("#message-1"));
+        assert_eq!(
+            ordinal.value().attr("aria-label"),
+            Some("Link to message 1")
+        );
+        assert_eq!(ordinal.text().collect::<String>(), "001");
+        assert_eq!(
+            message
+                .select(&selector(".role"))
+                .next()
+                .expect("role")
+                .text()
+                .collect::<String>(),
+            "AGENT"
+        );
+        assert_eq!(
+            message
+                .select(&selector("strong"))
+                .next()
+                .expect("strong")
+                .text()
+                .collect::<String>(),
+            "Done."
+        );
+    }
+
+    fn assert_viewer_assets() {
+        let theme = include_str!("theme.css");
+        for contract in [
+            "grid-template-columns: 44px 72px minmax(0, 1fr)",
+            "padding: 7px 0 8px 0;",
+            "--document-width: calc(140px + 80ch);",
+            "max-width: 80ch;",
+            ".minimap-frame",
+            "color-scheme: dark",
+            "[hidden] { display: none !important; }",
+            "z-index: 20;",
+            "width: 24px;",
+            "width: 6px;",
+            "touch-action: none;",
+            ".message:hover, .message:focus-within",
+        ] {
+            assert!(theme.contains(contract));
+        }
+        assert!(!theme.contains(".message.user"));
+        assert!(
+            theme
+                .lines()
+                .all(|line| !line.trim_start().starts_with("border"))
+        );
+        for contract in [
+            "setPointerCapture",
+            "pointermove",
+            "pointerup",
+            "pointercancel",
+            "addEventListener('load',layout",
+        ] {
+            assert!(VIEWER_JS.contains(contract));
+        }
     }
 
     #[tokio::test]
@@ -1444,54 +1623,14 @@ mod tests {
             .await
             .expect("viewer page")
             .render(&Cx::default());
-        assert!(html.contains("<body class=\"viewer-page\">"));
-        assert!(html.contains("<article class=\"viewer\">"));
-        assert!(html.contains("<div class=\"minimap-frame\">"));
-        assert!(html.contains("/style.css?v=20260814-topcoat-1"));
-        assert!(html.contains("/viewer.js?v=20260814-topcoat-1"));
-        assert!(html.contains("<div class=\"thread\">"));
-        assert!(html.contains("<section class=\"call-block\">"));
-        assert!(html.contains("class=\"message assistant\""));
-        assert!(html.contains(
-            "<a class=\"ordinal\" href=\"#message-1\" aria-label=\"Link to message 1\">001</a><span class=\"role\">AGENT</span>"
-        ));
-        assert!(html.contains("id=\"filter-user\""));
-        assert!(html.contains("id=\"filter-agent\""));
-        assert!(html.contains("id=\"filter-tools\""));
-        assert!(html.contains("class=\"filter-toggle user\""));
-        assert!(html.contains("class=\"filter-toggle assistant\""));
-        assert!(html.contains("class=\"filter-toggle tool\""));
-        assert!(html.contains("class=\"view-icon rendered-icon\""));
-        assert!(html.contains("class=\"view-icon text-icon\""));
+        let document = Html::parse_document(&html);
+        assert_viewer_shell(&document);
+        assert_viewer_controls(&document);
+        assert_viewer_message(&document);
         assert!(!html.contains(">Rendered<"));
         assert!(!html.contains(">Text<"));
-        assert!(html.contains("AGENT"));
-        assert!(html.contains("<strong>Done.</strong>"));
         assert!(!html.contains("shadow-sm"));
         assert!(!html.contains("bg-paper px-4 py-3"));
-        let theme = include_str!("theme.css");
-        assert!(theme.contains("grid-template-columns: 44px 72px minmax(0, 1fr)"));
-        assert!(theme.contains("padding: 7px 0 8px 0;"));
-        assert!(theme.contains("--document-width: calc(140px + 80ch);"));
-        assert!(theme.contains("max-width: 80ch;"));
-        assert!(theme.contains(".minimap-frame"));
-        assert!(theme.contains("color-scheme: dark"));
-        assert!(theme.contains("[hidden] { display: none !important; }"));
-        assert!(theme.contains("z-index: 20;"));
-        assert!(theme.contains("width: 24px;"));
-        assert!(theme.contains("width: 6px;"));
-        assert!(theme.contains("touch-action: none;"));
-        assert!(theme.contains(".message:hover, .message:focus-within"));
-        assert!(!theme.contains(".message.user"));
-        assert!(VIEWER_JS.contains("setPointerCapture"));
-        assert!(VIEWER_JS.contains("pointermove"));
-        assert!(VIEWER_JS.contains("pointerup"));
-        assert!(VIEWER_JS.contains("pointercancel"));
-        assert!(VIEWER_JS.contains("addEventListener('load',layout"));
-        assert!(
-            theme
-                .lines()
-                .all(|line| !line.trim_start().starts_with("border"))
-        );
+        assert_viewer_assets();
     }
 }

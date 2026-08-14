@@ -9,10 +9,11 @@
   --amber: #e6b566;
   --glass: rgba(9, 12, 10, .64);
   --glass-edge: rgba(215, 223, 216, .08);
+  --top-bar-offset: 88px;
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 52px; background: var(--bg); color: var(--ink); }
+html { scroll-behavior: smooth; scroll-padding-top: var(--top-bar-offset); background: var(--bg); color: var(--ink); }
 body {
   margin: 0;
   padding: 0 18px;
@@ -132,10 +133,10 @@ header, .meta {
   grid-template-columns: 44px 72px minmax(0, 1fr);
   align-items: baseline;
   margin: 0;
+  scroll-margin-top: var(--top-bar-offset);
   padding: 7px 0 8px 0;
   background: transparent;
   box-shadow: none;
-  scroll-margin-top: 52px;
 }
 .message:hover, .message:focus-within { background: rgba(114,227,159,.055); }
 .message-body { min-width: 0; max-width: 80ch; }
@@ -239,10 +240,12 @@ a:hover { color: #a3f6c1; }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 @media (max-width: 720px) {
+  :root { --top-bar-offset: 108px; }
   body { padding-inline: 12px; }
   main { padding-top: 8px; }
   .viewer { padding-right: 6px; }
-  .meta { gap: 8px; padding-top: 6px; }
+  .meta { grid-template-columns: 1fr; align-items: start; gap: 6px; padding-top: 6px; }
+  .toolbar { width: 100%; justify-content: space-between; }
   .meta h1 { font-size: 16px; }
   .meta p { font-size: 9.5px; }
   .view-control span { padding-inline: 4px; }
