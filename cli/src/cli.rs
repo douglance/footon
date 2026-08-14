@@ -1,10 +1,11 @@
 use std::path::Path;
 
 use incurs::cli::Cli;
-use incurs::command::{CommandDef, TypedContext, TypedResult};
+use incurs::command::{CommandDef, McpAnnotations, McpCommandOptions, TypedContext, TypedResult};
 use incurs::output::Format;
 use serde::Deserialize;
 
+use crate::blackout::{self, LocalBlackoutOutput, ShareBlackoutResponse};
 use crate::draft::{self, DraftOutput};
 use crate::error::Error;
 use crate::fetch;
@@ -41,6 +42,33 @@ struct FetchArgs {
     url: String,
 }
 
+#[derive(Deserialize, incurs::Args)]
+struct BlackoutArgs {
+    /// Sanitized local draft JSON to update in place.
+    draft: String,
+    /// One-based transcript message number.
+    message: usize,
+    /// Exact substring that must occur once in the selected message.
+    text: String,
+}
+
+#[derive(Deserialize, incurs::Args)]
+struct BlackoutShareArgs {
+    /// Footon share ID or full Footon share URL.
+    share: String,
+    /// One-based transcript message number.
+    message: usize,
+    /// Exact substring that must occur once in the selected message.
+    text: String,
+}
+
+#[derive(Deserialize, incurs::Options)]
+struct BlackoutShareOptions {
+    /// Protected Footon share collection endpoint.
+    #[incurs(default = "https://footon.dev/api/shares")]
+    endpoint: String,
+}
+
 #[derive(Deserialize, incurs::Options)]
 struct PublishOptions {
     /// Protected Footon share endpoint.
@@ -62,8 +90,70 @@ pub fn app() -> Cli {
         .version(env!("CARGO_PKG_VERSION"))
         .description("Sanitize agent threads locally, then publish only an approved safe draft")
         .command("draft", draft_command())
+        .command("blackout", blackout_command())
+        .command("blackout-share", blackout_share_command())
         .command("publish", publish_command())
         .command("fetch", fetch_command())
+}
+
+fn blackout_command() -> CommandDef {
+    CommandDef::typed::<BlackoutArgs, (), (), LocalBlackoutOutput, _, _>(
+        "blackout",
+        |context| async move {
+            match blackout::local(
+                Path::new(&context.args.draft),
+                context.args.message,
+                &context.args.text,
+            ) {
+                Ok(output) => TypedResult::ok(output),
+                Err(error) => typed_error(&error),
+            }
+        },
+    )
+    .description("Black out one exact substring in a sanitized local draft")
+    .mcp(mutation_options(false))
+    .done()
+}
+
+fn blackout_share_command() -> CommandDef {
+    CommandDef::typed::<
+        BlackoutShareArgs,
+        BlackoutShareOptions,
+        PublishEnv,
+        ShareBlackoutResponse,
+        _,
+        _,
+    >("blackout-share", |context| async move {
+        match blackout::remote(
+            &context.options.endpoint,
+            &context.env.footon_token,
+            &context.args.share,
+            context.args.message,
+            &context.args.text,
+        )
+        .await
+        {
+            Ok(output) => TypedResult::ok(output),
+            Err(error) => typed_error(&error),
+        }
+    })
+    .description("Black out one exact substring in an owner-controlled live share")
+    .mcp(mutation_options(true))
+    .done()
+}
+
+fn mutation_options(open_world: bool) -> McpCommandOptions {
+    McpCommandOptions {
+        annotations: Some(McpAnnotations {
+            read_only_hint: Some(false),
+            destructive_hint: Some(true),
+            idempotent_hint: Some(false),
+            open_world_hint: Some(open_world),
+            ..McpAnnotations::default()
+        }),
+        destructive: true,
+        ..McpCommandOptions::default()
+    }
 }
 
 fn draft_command() -> CommandDef {

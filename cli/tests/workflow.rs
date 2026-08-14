@@ -1,10 +1,13 @@
 use std::fs;
 
 use chrono::{TimeZone, Utc};
+use footon::blackout::remote as blackout_remote;
 use footon::cli::app;
+use footon::draft;
 use footon::fetch::fetch_markdown;
 use footon::model::{Draft, Message, Report, Role};
 use footon::publish::{build_share, send};
+use incurs::tool::{ToolCallOptions, ToolCallOutcome};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -31,6 +34,71 @@ async fn draft_command_writes_only_sanitized_local_artifacts() {
 }
 
 #[tokio::test]
+async fn blackout_command_updates_a_sanitized_draft_in_place() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("safe.json");
+    fs::write(&path, serde_json::to_vec_pretty(&sample_draft()).unwrap()).unwrap();
+
+    let mut stdout = Vec::new();
+    let exit = app()
+        .serve_to(
+            ["blackout", path.to_str().unwrap(), "1", "hello", "--json"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            &mut stdout,
+            false,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(exit, None);
+    let draft = draft::read(&path).unwrap();
+    assert_eq!(draft.messages[0].text, "[BLACKED OUT]");
+    assert_eq!(draft.report.redactions, 1);
+}
+
+#[tokio::test]
+async fn blackout_commands_are_typed_incurs_tools_for_code_mode() {
+    let catalog = app().tool_catalog();
+    let local = catalog.get("blackout").unwrap();
+    let remote = catalog.get("blackout-share").unwrap();
+
+    assert_eq!(
+        local.input_schema["properties"]["message"]["type"],
+        "number"
+    );
+    assert_eq!(local.input_schema["properties"]["text"]["type"], "string");
+    assert_eq!(remote.input_schema["properties"]["share"]["type"], "string");
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("code-mode-draft.json");
+    fs::write(&path, serde_json::to_vec_pretty(&sample_draft()).unwrap()).unwrap();
+    let outcome = catalog
+        .call(
+            "blackout",
+            [
+                (
+                    "draft".to_string(),
+                    serde_json::json!(path.to_str().unwrap()),
+                ),
+                ("message".to_string(), serde_json::json!(1)),
+                ("text".to_string(), serde_json::json!("hello")),
+            ]
+            .into_iter()
+            .collect(),
+            ToolCallOptions::isolated(),
+        )
+        .await;
+
+    assert!(matches!(outcome, ToolCallOutcome::Ok { .. }));
+    assert_eq!(
+        draft::read(&path).unwrap().messages[0].text,
+        "[BLACKED OUT]"
+    );
+}
+
+#[tokio::test]
 async fn publish_sends_bearer_and_exact_share_body() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}/api/shares", listener.local_addr().unwrap());
@@ -47,6 +115,41 @@ async fn publish_sends_bearer_and_exact_share_body() {
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(body).unwrap()["schemaVersion"],
         "footon.share.v2"
+    );
+}
+
+#[tokio::test]
+async fn blackout_share_sends_one_exact_owner_update() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let endpoint = format!("{origin}/api/shares");
+    let share = format!("{origin}/s/abcdefghijklmnopqrst");
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut bytes = vec![0; 8192];
+        let size = stream.read(&mut bytes).await.unwrap();
+        let request = String::from_utf8(bytes[..size].to_vec()).unwrap();
+        let body = r#"{"id":"abcdefghijklmnopqrst","url":"https://footon.dev/s/abcdefghijklmnopqrst","updatedAt":"2026-08-14T01:02:03Z","message":2,"replacement":"[BLACKED OUT]","redactions":4}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).await.unwrap();
+        request
+    });
+
+    let response = blackout_remote(&endpoint, "owner-token", &share, 2, "private text")
+        .await
+        .unwrap();
+    let request = server.await.unwrap();
+
+    assert_eq!(response.id, "abcdefghijklmnopqrst");
+    assert!(request.starts_with("POST /api/shares/abcdefghijklmnopqrst/blackouts HTTP/1.1"));
+    assert!(request.contains("authorization: Bearer owner-token"));
+    let body = request.split("\r\n\r\n").nth(1).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(body).unwrap(),
+        serde_json::json!({ "message": 2, "text": "private text" })
     );
 }
 

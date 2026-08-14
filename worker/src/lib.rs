@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use footon_core::accept::{ContentType, negotiate};
+use footon_core::blackout::{BLACKOUT_TEXT, blackout};
 use footon_core::markdown::messages_to_markdown;
 use footon_core::model::{Message, Share, ShareDocument, ShareRecord, validate_share};
 use footon_core::validate::validate_share as validate_safe_share;
@@ -140,6 +141,11 @@ async fn handle(req: &mut Request, env: &Env) -> Result<Response> {
     if method == Method::Get && path == "/api/shares" {
         return api_list_shares(req, env).await;
     }
+    if method == Method::Post
+        && let Some(id) = blackout_share_id(path)
+    {
+        return api_blackout_share(req, env, id).await;
+    }
     if method == Method::Delete && path.starts_with("/api/shares/") {
         return api_revoke_share(req, env, path.trim_start_matches("/api/shares/")).await;
     }
@@ -172,6 +178,7 @@ fn router() -> Router {
         (HttpMethod::POST, "/oauth/revoke"),
         (HttpMethod::POST, "/api/shares"),
         (HttpMethod::GET, "/api/shares"),
+        (HttpMethod::POST, "/api/shares/{id}/blackouts"),
         (HttpMethod::DELETE, "/api/shares/{id}"),
         (HttpMethod::POST, "/mcp"),
         (HttpMethod::GET, "/s/{id}"),
@@ -202,6 +209,32 @@ struct ShareInput {
     approved_at: chrono::DateTime<chrono::Utc>,
     messages: Vec<Message>,
     report: footon_core::model::Report,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ShareBlackoutInput {
+    message: usize,
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ShareBlackoutToolInput {
+    id: String,
+    message: usize,
+    text: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShareBlackoutResponse {
+    id: String,
+    url: String,
+    updated_at: String,
+    message: usize,
+    replacement: &'static str,
+    redactions: usize,
 }
 
 async fn api_create_share(req: &mut Request, env: &Env) -> Result<Response> {
@@ -277,6 +310,101 @@ async fn api_list_shares(req: &Request, env: &Env) -> Result<Response> {
         .await?
         .results::<ListShareRow>()?;
     json_response(&rows)
+}
+
+async fn api_blackout_share(req: &mut Request, env: &Env, id: &str) -> Result<Response> {
+    let Some(user) = bearer_user(req, env).await? else {
+        return Response::error("invalid bearer token", 401);
+    };
+    if !has_scope(&user, "shares:write") {
+        return Response::error("missing scope: shares:write", 403);
+    }
+    let input = req.json::<ShareBlackoutInput>().await?;
+    let Some(response) = blackout_owned_share(env, &user.user_id, id, &input).await? else {
+        return Response::error("not found", 404);
+    };
+    match response {
+        Ok(response) => json_response(&response),
+        Err(message) => Response::error(message, 400),
+    }
+}
+
+async fn blackout_owned_share(
+    env: &Env,
+    owner_id: &str,
+    id: &str,
+    input: &ShareBlackoutInput,
+) -> Result<Option<std::result::Result<ShareBlackoutResponse, String>>> {
+    validate_share_id(id)?;
+    let Some(mut share) = load_owned_share(env, owner_id, id).await? else {
+        return Ok(None);
+    };
+    let outcome = match blackout(
+        &mut share.messages,
+        &mut share.report,
+        input.message,
+        &input.text,
+    ) {
+        Ok(outcome) => outcome,
+        Err(error) => return Ok(Some(Err(error.to_string()))),
+    };
+    if let Err(error) = validate_share(&share) {
+        return Ok(Some(Err(error.to_string())));
+    }
+    if let Err(error) = validate_safe_share(&share) {
+        return Ok(Some(Err(error.to_string())));
+    }
+
+    let updated_at = now_string();
+    let document_json = serde_json::to_string(&share)?;
+    env.d1("DB")?
+        .prepare(
+            "UPDATE shares SET document_json = ?1
+             WHERE id = ?2 AND owner_id = ?3 AND revoked_at IS NULL",
+        )
+        .bind_refs(&[
+            D1Type::Text(&document_json),
+            D1Type::Text(id),
+            D1Type::Text(owner_id),
+        ])?
+        .run()
+        .await?;
+    Ok(Some(Ok(ShareBlackoutResponse {
+        id: id.to_string(),
+        url: format!("{ORIGIN}/s/{id}"),
+        updated_at,
+        message: outcome.message,
+        replacement: BLACKOUT_TEXT,
+        redactions: outcome.redactions,
+    })))
+}
+
+async fn load_owned_share(env: &Env, owner_id: &str, id: &str) -> Result<Option<Share>> {
+    #[derive(Deserialize)]
+    struct Row {
+        document_json: String,
+    }
+
+    env.d1("DB")?
+        .prepare(
+            "SELECT document_json FROM shares
+             WHERE id = ?1 AND owner_id = ?2 AND revoked_at IS NULL",
+        )
+        .bind_refs(&[D1Type::Text(id), D1Type::Text(owner_id)])?
+        .first::<Row>(None)
+        .await?
+        .map(|row| {
+            ShareDocument::from_json(&row.document_json)
+                .map(|document| Share {
+                    schema_version: document.schema_version,
+                    title: document.title,
+                    approved_at: document.approved_at,
+                    messages: document.messages,
+                    report: document.report,
+                })
+                .map_err(|error| worker::Error::RustError(error.to_string()))
+        })
+        .transpose()
 }
 
 async fn api_revoke_share(req: &Request, env: &Env, id: &str) -> Result<Response> {
@@ -929,6 +1057,7 @@ async fn mcp(req: &mut Request, env: &Env) -> Result<Response> {
             "tools": [
                 { "name": "share_create", "description": "Publish one approved sanitized share" },
                 { "name": "share_list", "description": "List your active Footon shares" },
+                { "name": "share_blackout", "description": "Black out one exact substring in an owner-controlled live share" },
                 { "name": "share_revoke", "description": "Revoke one Footon share" }
             ]
         }),
@@ -996,6 +1125,19 @@ async fn call_tool(
                 .run()
                 .await?;
             Ok(serde_json::json!({ "ok": true }))
+        }
+        "share_blackout" => {
+            require_scope(user, "shares:write")?;
+            let tool_input = serde_json::from_value::<ShareBlackoutToolInput>(args)?;
+            let input = ShareBlackoutInput {
+                message: tool_input.message,
+                text: tool_input.text,
+            };
+            blackout_owned_share(env, &user.user_id, &tool_input.id, &input)
+                .await?
+                .ok_or_else(|| worker::Error::RustError("share not found".to_string()))?
+                .map_err(worker::Error::RustError)
+                .and_then(|response| serde_json::to_value(response).map_err(Into::into))
         }
         "share_create" => {
             require_scope(user, "shares:write")?;
@@ -1136,6 +1278,12 @@ fn validate_share_id(id: &str) -> Result<()> {
     } else {
         Err(worker::Error::RustError("invalid share id".to_string()))
     }
+}
+
+fn blackout_share_id(path: &str) -> Option<&str> {
+    path.strip_prefix("/api/shares/")?
+        .strip_suffix("/blackouts")
+        .filter(|id| !id.is_empty() && !id.contains('/'))
 }
 
 fn query(url: &Url, name: &str) -> Option<String> {
@@ -1329,6 +1477,10 @@ mod tests {
         let rejected = http::Request::post("https://footon.dev/s/abcdefghijklmnopqrst")
             .body(TopcoatBody::empty())
             .expect("request");
+        let blackout =
+            http::Request::post("https://footon.dev/api/shares/abcdefghijklmnopqrst/blackouts")
+                .body(TopcoatBody::empty())
+                .expect("request");
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("runtime");
@@ -1339,6 +1491,10 @@ mod tests {
         );
         assert_eq!(
             runtime.block_on(router().handle(favicon)).status(),
+            http::StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            runtime.block_on(router().handle(blackout)).status(),
             http::StatusCode::NO_CONTENT
         );
         assert_eq!(
@@ -1362,6 +1518,11 @@ mod tests {
     fn share_ids_and_redirects_are_bounded() {
         assert!(validate_share_id("abcdefghijklmnopqrst").is_ok());
         assert!(validate_share_id("short").is_err());
+        assert_eq!(
+            blackout_share_id("/api/shares/abcdefghijklmnopqrst/blackouts"),
+            Some("abcdefghijklmnopqrst")
+        );
+        assert_eq!(blackout_share_id("/api/shares/x/blackouts/more"), None);
         assert!(validate_redirect_uri("https://agent.example/callback").is_ok());
         assert!(validate_redirect_uri("http://localhost:4000/callback").is_ok());
         assert!(validate_redirect_uri("http://agent.example/callback").is_err());
@@ -1410,6 +1571,17 @@ mod tests {
                 .iter()
                 .any(|command| command.contains("footon fetch https://footon.dev/s/..."))
         );
+        assert!(
+            commands
+                .iter()
+                .any(|command| command.contains("footon blackout footon-draft.json"))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|command| command.contains("footon blackout-share https://footon.dev/s/..."))
+        );
+        assert!(page_text.contains("Incurs Code Mode"));
         assert!(page_text.contains("https://footon.dev/mcp"));
         assert_eq!(
             document

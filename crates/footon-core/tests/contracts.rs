@@ -1,4 +1,5 @@
 use chrono::{TimeZone, Utc};
+use footon_core::blackout::{BLACKOUT_TEXT, blackout};
 use footon_core::markdown::serialize_share;
 use footon_core::model::{
     Draft, Message, Report, Role, SCHEMA_VERSION_V1, SCHEMA_VERSION_V2, Share,
@@ -117,4 +118,42 @@ fn report() -> Report {
         redactions: 0,
         detectors: vec!["footon-secret-patterns@1".to_string()],
     }
+}
+
+#[test]
+fn manually_blacks_out_one_exact_prose_match() {
+    let mut messages = vec![
+        Message::new(Role::User, "keep private-code-123 private"),
+        Message::new(Role::Assistant, "done"),
+    ];
+    let mut report = report();
+
+    let outcome = blackout(&mut messages, &mut report, 1, "private-code-123").unwrap();
+
+    assert_eq!(messages[0].text, format!("keep {BLACKOUT_TEXT} private"));
+    assert_eq!(outcome.message, 1);
+    assert_eq!(outcome.replacement, BLACKOUT_TEXT);
+    assert_eq!(report.redactions, 1);
+    assert!(
+        report
+            .detectors
+            .iter()
+            .any(|detector| detector == "footon-manual-blackout@1")
+    );
+}
+
+#[test]
+fn manual_blackout_rejects_ambiguous_or_non_prose_targets() {
+    let mut repeated = vec![Message::new(Role::User, "same same")];
+    let mut repeated_report = report();
+    assert!(blackout(&mut repeated, &mut repeated_report, 1, "same").is_err());
+
+    let mut activity = vec![Message::new(Role::Tool, "exec cargo 1 argument")];
+    let mut activity_report = report();
+    assert!(blackout(&mut activity, &mut activity_report, 1, "cargo").is_err());
+
+    let mut prose = vec![Message::new(Role::Assistant, "safe")];
+    let mut prose_report = report();
+    assert!(blackout(&mut prose, &mut prose_report, 0, "safe").is_err());
+    assert!(blackout(&mut prose, &mut prose_report, 1, "missing").is_err());
 }

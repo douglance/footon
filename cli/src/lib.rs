@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod blackout;
 pub mod cli;
 pub mod draft;
 pub mod error;

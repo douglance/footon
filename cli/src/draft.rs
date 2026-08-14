@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use schemars::JsonSchema;
@@ -36,7 +37,7 @@ pub fn create(input: &Path, output: &Path, title: String, source: Source) -> Res
         messages: sanitized.messages,
         report: sanitized.report,
     };
-    write_draft(output, &draft)?;
+    write(output, &draft)?;
     let report_path = report_path(output);
     write_json(&report_path, &draft.report)?;
     Ok(DraftOutput {
@@ -60,16 +61,30 @@ pub fn read(path: &Path) -> Result<Draft> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-fn write_draft(path: &Path, draft: &Draft) -> Result<()> {
+pub(crate) fn write(path: &Path, draft: &Draft) -> Result<()> {
     write_json(path, draft)
 }
 
 fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(value)?;
-    fs::write(path, bytes).map_err(|source| Error::Write {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|source| Error::Write {
         path: path.to_path_buf(),
         source,
-    })
+    })?;
+    file.write_all(&bytes).map_err(|source| Error::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    file.as_file().sync_all().map_err(|source| Error::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    file.persist(path).map_err(|error| Error::Write {
+        path: path.to_path_buf(),
+        source: error.error,
+    })?;
+    Ok(())
 }
 
 fn report_path(path: &Path) -> PathBuf {

@@ -4,6 +4,7 @@ use crate::ui::layout::{command_block, page_layout, page_shell, section};
 
 const INSTALL_COMMAND: &str = "cargo install --git https://github.com/douglance/footon footon";
 const SHARE_COMMAND: &str = "footon draft thread.jsonl --title \"Public title\" --output footon-draft.json\nFOOTON_TOKEN=... footon publish footon-draft.json";
+const BLACKOUT_COMMAND: &str = "footon blackout footon-draft.json 12 \"exact private text\"\nFOOTON_TOKEN=... footon blackout-share https://footon.dev/s/... 12 \"exact private text\"";
 const FETCH_COMMAND: &str = "footon fetch https://footon.dev/s/...";
 
 pub(crate) async fn home_page() -> Result {
@@ -53,6 +54,17 @@ pub(crate) async fn home_page() -> Result {
                     </p>
                     command_block(
                         command: FETCH_COMMAND,
+                        class: "mt-3 overflow-x-auto bg-paper p-3 text-sm"
+                    )
+                )
+                section(
+                    title: "Black out specific text",
+                    class: "mt-8",
+                    <p class="mt-2 text-sm text-muted">
+                        "Select one message number and one exact substring. Footon replaces it with [BLACKED OUT] in a local draft or in a live share you own. The typed commands are also available to Incurs Code Mode, so an agent can compose several explicit blackouts before or after publishing."
+                    </p>
+                    command_block(
+                        command: BLACKOUT_COMMAND,
                         class: "mt-3 overflow-x-auto bg-paper p-3 text-sm"
                     )
                 )

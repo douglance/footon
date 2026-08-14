@@ -1,5 +1,6 @@
 pub mod accept;
 pub mod activity;
+pub mod blackout;
 pub mod error;
 pub mod markdown;
 pub mod model;
