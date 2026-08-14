@@ -20,8 +20,11 @@ use topcoat::router::{
 };
 
 mod components;
+mod ui;
 mod viewer;
 
+use ui::pages::{check_email_page, connect_page, home_page, install_page};
+use ui::response as ui_response;
 use viewer::{VIEWER_JS, viewer_page};
 
 const STYLE: &str = include_str!(concat!(env!("OUT_DIR"), "/tailwind.css"));
@@ -89,13 +92,13 @@ async fn handle(req: &mut Request, env: &Env) -> Result<Response> {
     let method = req.method();
 
     if method == Method::Get && path == "/" {
-        return html_response(&home_page());
+        return ui_response::standard(home_page().await);
     }
     if method == Method::Get && path == "/install" {
-        return html_response(&install_page());
+        return ui_response::standard(install_page().await);
     }
     if method == Method::Get && path == "/connect" {
-        return html_response(&connect_page());
+        return ui_response::standard(connect_page().await);
     }
     if method == Method::Get && path == "/style.css" {
         return css_response(STYLE);
@@ -553,7 +556,7 @@ async fn auth_request(req: &mut Request, env: &Env, url: &Url) -> Result<Respons
     if content_type.starts_with("application/json") {
         json_response(&AuthRequestResponse { ok: true })
     } else {
-        html_response(&check_email_page())
+        ui_response::standard(check_email_page().await)
     }
 }
 
@@ -1024,23 +1027,6 @@ async fn call_tool(
     }
 }
 
-fn home_page() -> String {
-    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Footon helps agents share a safe version of a thread or transcript."><title>Footon</title><link rel="stylesheet" href="/style.css?v=20260814-80ch-drag-3"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-3xl px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / SAFE AGENT THREAD SHARING</p><h1 class="mt-2 max-w-[40ch] text-3xl font-semibold tracking-tight text-balance">Share an agent thread safely.</h1><p class="mt-3 max-w-[56ch] text-base text-pretty text-muted sm:text-sm">Footon gives agents a simple way to share a safe version of their current thread or transcript with another person or agent. It removes sensitive data and noisy tool details. The original transcript stays local. Footon publishes only the draft you approve.</p><p class="mt-3 font-mono text-sm text-muted">DRAFT LOCALLY → REVIEW → SHARE AN UNLISTED LINK</p><section class="mt-8" id="install"><h2 class="text-lg font-semibold">Install the CLI</h2><pre class="mt-3 overflow-x-auto bg-paper p-3 text-sm"><code>cargo install --git https://github.com/douglance/footon footon</code></pre></section><section class="mt-8"><h2 class="text-lg font-semibold">Share a safe thread</h2><p class="mt-2 text-base text-pretty text-muted sm:text-sm">Create a sanitized draft from an agent transcript, review it, then publish only the approved file.</p><pre class="mt-3 overflow-x-auto bg-paper p-3 text-sm"><code>footon draft thread.jsonl --title "Public title" --output footon-draft.json
-FOOTON_TOKEN=... footon publish footon-draft.json</code></pre></section><section class="mt-8"><h2 class="text-lg font-semibold">Open a shared chain</h2><p class="mt-2 text-sm text-muted">Open the returned link in a browser, or fetch its Markdown for an agent.</p><pre class="mt-3 overflow-x-auto bg-paper p-3 text-sm"><code>footon fetch https://footon.dev/s/...</code></pre></section><section class="mt-8"><h2 class="text-lg font-semibold">Connect an agent</h2><p class="mt-2 text-sm text-muted">Use <code>https://footon.dev/mcp</code> as the remote MCP endpoint. Footon authorizes access with OAuth and passwordless email sign-in.</p><p class="mt-4 text-sm"><a href="/connect">View agent connection details</a></p></section></main></body></html>"#.to_string()
-}
-
-fn install_page() -> String {
-    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Install Footon</title><link rel="stylesheet" href="/style.css?v=20260814-80ch-drag-3"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-2xl px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / INSTALL</p><h1 class="mt-2 text-2xl font-semibold">Install the Rust CLI</h1><pre class="mt-5 overflow-x-auto border border-line bg-paper p-3 text-sm"><code>cargo install footon</code></pre><p class="mt-4 text-sm text-muted">Fetch a shared thread as Markdown with <code>footon fetch https://footon.dev/s/...</code>.</p></main></body></html>"#.to_string()
-}
-
-fn connect_page() -> String {
-    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Footon</title><link rel="stylesheet" href="/style.css?v=20260814-80ch-drag-3"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-2xl px-4 py-8"><p class="font-mono text-xs text-muted">FOOTON / CONNECT</p><h1 class="mt-2 text-2xl font-semibold">Connect an agent</h1><dl class="mt-5 grid grid-cols-[8rem_1fr] gap-x-3 gap-y-2 border-y border-line py-3 text-sm"><dt class="text-muted">MCP endpoint</dt><dd><code>https://footon.dev/mcp</code></dd><dt class="text-muted">OAuth</dt><dd>Authorization code + PKCE S256</dd><dt class="text-muted">Scopes</dt><dd><code>shares:read shares:write</code></dd></dl></main></body></html>"#.to_string()
-}
-
-fn check_email_page() -> String {
-    r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Check your email</title><link rel="stylesheet" href="/style.css?v=20260814-80ch-drag-3"></head><body class="bg-canvas text-ink"><main class="mx-auto max-w-md px-4 py-10"><p class="font-mono text-xs text-muted">FOOTON / AUTHORIZE</p><h1 class="mt-2 text-2xl font-semibold">Check your email</h1><p class="mt-3 text-sm text-muted">The sign-in link expires in 10 minutes and can be used once.</p></main></body></html>"#.to_string()
-}
-
 fn authorize_page(url: &Url, env: &Env) -> String {
     let client_id = escape_html(&query(url, "client_id").unwrap_or_default());
     let redirect_uri = escape_html(&query(url, "redirect_uri").unwrap_or_default());
@@ -1409,9 +1395,9 @@ mod tests {
         assert!(validate_redirect_uri("https://agent.example/callback#fragment").is_err());
     }
 
-    #[test]
-    fn home_page_explains_and_installs_prompt_chain_sharing() {
-        let html = home_page();
+    #[tokio::test]
+    async fn home_page_explains_and_installs_prompt_chain_sharing() {
+        let html = home_page().await.expect("home page").render(&Cx::default());
 
         assert!(html.contains("Share an agent thread safely"));
         assert!(html.contains("safe version of their current thread or transcript"));
@@ -1422,12 +1408,12 @@ mod tests {
         assert!(html.contains("FOOTON_TOKEN=... footon publish footon-draft.json"));
         assert!(html.contains("footon fetch https://footon.dev/s/..."));
         assert!(html.contains("https://footon.dev/mcp"));
-        assert!(html.contains("/style.css?v=20260814-80ch-drag-3"));
+        assert!(html.contains("/style.css?v=20260814-topcoat-1"));
     }
 
-    #[test]
-    fn favicon_uses_the_green_footon_icon() {
-        let html = add_favicon(&home_page());
+    #[tokio::test]
+    async fn favicon_uses_the_green_footon_icon() {
+        let html = home_page().await.expect("home page").render(&Cx::default());
 
         assert!(html.contains("<link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\">"));
         assert!(ICON.contains("#72e39f"));

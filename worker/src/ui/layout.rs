@@ -69,9 +69,6 @@ pub(crate) async fn section(
 }
 
 #[component]
-pub(crate) async fn command_block(
-    command: &str,
-    class: &str,
-) -> Result {
+pub(crate) async fn command_block(command: &str, class: &str) -> Result {
     view! { <pre class=(class)><code>(command)</code></pre> }
 }
