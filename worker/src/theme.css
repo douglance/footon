@@ -317,9 +317,9 @@ header, .meta {
   overflow: hidden;
   white-space: nowrap;
 }
-.thread-view-toggle:focus-visible + .meta .view-control { outline: 2px solid var(--amber); outline-offset: 2px; }
-.thread-view-toggle:checked + .meta .view-control span:first-child { background: transparent; color: var(--muted); }
-.thread-view-toggle:checked + .meta .view-control span:last-child { background: var(--line); color: var(--ink); }
+.thread-view-toggle:focus-visible ~ .meta .view-control { outline: 2px solid var(--amber); outline-offset: 2px; }
+.thread-view-toggle:checked ~ .meta .view-control span:first-child { background: transparent; color: var(--muted); }
+.thread-view-toggle:checked ~ .meta .view-control span:last-child { background: var(--line); color: var(--ink); }
 .thread-view-toggle:checked ~ .thread .rendered { display: none; }
 .thread-view-toggle:checked ~ .thread .message-text { display: block; }
 [hidden] { display: none !important; }

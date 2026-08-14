@@ -1852,6 +1852,7 @@ mod tests {
             "width: 6px;",
             "touch-action: none;",
             ".message:hover, .message:focus-within",
+            ".thread-view-toggle:checked ~ .meta .view-control",
         ] {
             assert!(theme.contains(contract));
         }
