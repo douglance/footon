@@ -16,6 +16,17 @@ pub struct SanitizedMessages {
     pub report: Report,
 }
 
+/// Redact recognized credentials, personal data, private paths, and control
+/// characters from a bounded text field before it leaves the caller's trust
+/// boundary.
+///
+/// # Errors
+///
+/// Returns an error if a scanner span cannot be applied safely.
+pub fn sanitize_text(text: &str) -> crate::error::Result<(String, usize)> {
+    redact(text)
+}
+
 /// Redact sensitive text, drop injected prompt blocks, and compact assistant chunks.
 ///
 /// # Errors

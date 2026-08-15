@@ -135,6 +135,18 @@ impl CredentialStore for KeyringStore {
     }
 }
 
+/// Return the email from the stored session for an origin, if present.
+///
+/// # Errors
+///
+/// Returns an error when the origin or credential store is unavailable.
+pub fn last_email(origin: &str, store: &impl CredentialStore) -> Result<Option<String>> {
+    let origin = endpoint_origin(origin)?;
+    store
+        .load(&origin)
+        .map(|session| session.map(|session| session.email().to_string()))
+}
+
 /// Resolve the token for an authenticated endpoint, refreshing a stored session
 /// when necessary. An explicit environment token always wins and is never read
 /// from or written to the credential store.

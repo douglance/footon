@@ -16,6 +16,9 @@
     },
   ],
   "send_email": [{ "name": "EMAIL" }],
-  "vars": { "TURNSTILE_SITE_KEY": "0x4AAAAAAEOkcvkFZbXS5eQQ" },
+  "vars": {
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAEOkcvkFZbXS5eQQ",
+    "SHARE_ACCESS_WRITES_ENABLED": "true"
+  },
   "triggers": { "crons": ["17 3 * * *"] },
 }

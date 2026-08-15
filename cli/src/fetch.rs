@@ -13,12 +13,39 @@ const MAX_REDIRECTS: usize = 3;
 /// Returns an error when the URL is unsafe, the server does not negotiate
 /// Markdown, redirects leave the origin, or the body exceeds the size bound.
 pub async fn fetch_markdown(url: &str) -> Result<String> {
+    fetch_markdown_inner(url, None).await
+}
+
+/// Fetch a private Footon share as Markdown with bearer authentication.
+///
+/// # Errors
+///
+/// Returns an error when the URL is not the Footon service or loopback, the
+/// response is unsafe, or authentication is rejected.
+pub async fn fetch_markdown_authenticated(url: &str, token: &str) -> Result<String> {
+    let url = validate_share_url(url)?;
+    if url.host_str() != Some("footon.dev")
+        && !matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1"))
+    {
+        return Err(Error::Fetch(
+            "authentication is allowed only for footon.dev or loopback tests".to_string(),
+        ));
+    }
+    fetch_markdown_inner(url.as_str(), Some(token)).await
+}
+
+#[must_use]
+pub fn authentication_required(error: &Error) -> bool {
+    matches!(error, Error::Fetch(message) if message == "server returned 401 Unauthorized")
+}
+
+async fn fetch_markdown_inner(url: &str, token: Option<&str>) -> Result<String> {
     let mut url = validate_share_url(url)?;
     let origin = origin_key(&url);
     let client = client()?;
 
     for _ in 0..=MAX_REDIRECTS {
-        let response = request_markdown(&client, &url).await?;
+        let response = request_markdown(&client, &url, token).await?;
 
         if response.status().is_redirection() {
             let next = redirect_target(&url, &response)?;
@@ -42,10 +69,16 @@ fn client() -> Result<reqwest::Client> {
         .map_err(|error| Error::Fetch(error.to_string()))
 }
 
-async fn request_markdown(client: &reqwest::Client, url: &Url) -> Result<reqwest::Response> {
-    client
-        .get(url.clone())
-        .header(ACCEPT, "text/markdown")
+async fn request_markdown(
+    client: &reqwest::Client,
+    url: &Url,
+    token: Option<&str>,
+) -> Result<reqwest::Response> {
+    let mut request = client.get(url.clone()).header(ACCEPT, "text/markdown");
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    request
         .send()
         .await
         .map_err(|error| Error::Fetch(error.to_string()))

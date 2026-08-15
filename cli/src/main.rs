@@ -6,7 +6,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if args.next().is_some() {
             return Err("usage: footon fetch <share-url>".into());
         }
-        let markdown = footon::fetch::fetch_markdown(&url).await?;
+        let markdown = footon::cli::fetch_share_url(&url).await?;
         print!("{markdown}");
         return Ok(());
     }

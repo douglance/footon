@@ -1,6 +1,6 @@
 [package]
 name = "footon"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version.workspace = true
 description = "Sanitize and explicitly publish agent conversations to footon.dev"
@@ -16,7 +16,7 @@ categories = ["command-line-utilities", "development-tools"]
 base64 = "0.22"
 blake3 = "1.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
-footon-core = { version = "=0.1.0", path = "../crates/footon-core" }
+footon-core = { version = "=0.2.0", path = "../crates/footon-core" }
 incurs = { version = "=0.5.2", default-features = false, features = ["cli", "mcp"] }
 keyring = "4.1.6"
 rand = "0.8"

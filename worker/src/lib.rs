@@ -18,12 +18,18 @@ use topcoat::router::{
     Body as TopcoatBody, Method as HttpMethod, Path, RouteFn, RouteFuture, Router,
 };
 
+mod access;
 mod billing;
 mod billing_adapter;
 mod components;
+mod shares;
+mod systems;
 mod ui;
 
-use billing_adapter::{billing_status, checkout, lemon_squeezy_webhook, user_has_share_capacity};
+use access::{GeneralAccess, ShareAction, load_share_access};
+use billing_adapter::{
+    billing_status, checkout, lemon_squeezy_webhook, user_has_private_share_capacity, user_is_pro,
+};
 
 use ui::authorization::{
     AuthorizationPage, VerificationPage, authorization_markdown, authorize_page,
@@ -51,6 +57,7 @@ const EMAIL_CODE_TTL_SECONDS: i64 = 600;
 const EMAIL_CODE_RESEND_COOLDOWN_SECONDS: i64 = 60;
 const MAX_EMAIL_CODE_ATTEMPTS: i32 = 5;
 const REVOKED_SHARE_RETENTION_SECONDS: i64 = 2_592_000;
+const REMOTE_REPORT_RETENTION_SECONDS: i64 = 2_592_000;
 const MCP_INITIALIZE_PROTOCOL_VERSIONS: [&str; 4] =
     ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
 const ROBOTS: &str = "User-agent: *\nAllow: /\n";
@@ -116,10 +123,35 @@ async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: worker::ScheduleConte
             "DELETE FROM oauth_clients_v2 WHERE expires_at < ?1",
             "DELETE FROM oauth_access_tokens_v2 WHERE expires_at < ?1 OR revoked_at IS NOT NULL",
             "DELETE FROM oauth_refresh_tokens_v2 WHERE expires_at < ?1 OR revoked_at IS NOT NULL",
+            "DELETE FROM share_viewer_challenges WHERE expires_at < ?1",
+            "DELETE FROM share_browser_sessions WHERE expires_at < ?1 OR revoked_at IS NOT NULL",
         ] {
             if let Ok(stmt) = db.prepare(sql).bind_refs(&[D1Type::Text(&now)]) {
                 let _ = stmt.run().await;
             }
+        }
+        let report_cutoff = time_string(unix_now() - REMOTE_REPORT_RETENTION_SECONDS);
+        if let Ok(stmt) = db
+            .prepare("DELETE FROM remote_log_reports WHERE received_at < ?1")
+            .bind_refs(&[D1Type::Text(&report_cutoff)])
+        {
+            let _ = stmt.run().await;
+        }
+        if let Ok(stmt) = db
+            .prepare(
+                "DELETE FROM service_keys
+                 WHERE expires_at < ?1 OR (revoked_at IS NOT NULL AND revoked_at < ?1)",
+            )
+            .bind_refs(&[D1Type::Text(&report_cutoff)])
+        {
+            let _ = stmt.run().await;
+        }
+        let auth_attempt_cutoff = time_string(unix_now() - 86_400);
+        if let Ok(stmt) = db
+            .prepare("DELETE FROM share_auth_attempts WHERE created_at < ?1")
+            .bind_refs(&[D1Type::Text(&auth_attempt_cutoff)])
+        {
+            let _ = stmt.run().await;
         }
         let revoked_share_cutoff = time_string(unix_now() - REVOKED_SHARE_RETENTION_SECONDS);
         if let Ok(stmt) = db
@@ -160,6 +192,19 @@ async fn handle_method(req: &mut Request, env: &Env, method: Method) -> Result<R
     if method == Method::Post && path == "/auth/verify" {
         return auth_verify(req, env).await;
     }
+    if method == Method::Post
+        && let Some(id) = viewer_share_id(path, "/signin")
+    {
+        return access::request_viewer_code(req, env, id).await;
+    }
+    if method == Method::Post
+        && let Some(id) = viewer_share_id(path, "/verify")
+    {
+        return access::verify_viewer_code(req, env, id).await;
+    }
+    if method == Method::Post && path == "/viewer/signout" {
+        return access::sign_out_viewer(req, env).await;
+    }
     if method == Method::Post && path == "/oauth/token" {
         return oauth_token(req, env).await;
     }
@@ -172,11 +217,39 @@ async fn handle_method(req: &mut Request, env: &Env, method: Method) -> Result<R
     if method == Method::Post && path.starts_with("/checkout/") {
         return checkout(req, env, path.trim_start_matches("/checkout/")).await;
     }
+    if let Some(response) = systems::api_route(req, env, &method, path).await? {
+        return Ok(response);
+    }
     if method == Method::Post && path == "/api/shares" {
         return api_create_share(req, env).await;
     }
     if method == Method::Get && path == "/api/shares" {
         return api_list_shares(req, env).await;
+    }
+    if method == Method::Get
+        && let Some(id) = share_subresource_id(path, "/access")
+    {
+        return shares::api_access(req, env, id).await;
+    }
+    if method == Method::Patch
+        && let Some(id) = share_item_id(path)
+    {
+        return shares::api_update(req, env, id).await;
+    }
+    if method == Method::Put
+        && let Some(id) = share_subresource_id(path, "/members")
+    {
+        return shares::api_grant(req, env, id).await;
+    }
+    if method == Method::Delete
+        && let Some((id, member_id)) = share_member_ids(path)
+    {
+        return shares::api_remove_member(req, env, id, member_id).await;
+    }
+    if method == Method::Post
+        && let Some(id) = share_subresource_id(path, "/transfer")
+    {
+        return shares::api_transfer(req, env, id).await;
     }
     if method == Method::Get && path == "/api/billing" {
         return api_billing_status(req, env).await;
@@ -292,13 +365,26 @@ fn router() -> Router {
         (HttpMethod::POST, "/oauth/register"),
         (HttpMethod::POST, "/auth/request"),
         (HttpMethod::POST, "/auth/verify"),
+        (HttpMethod::POST, "/s/{id}/signin"),
+        (HttpMethod::POST, "/s/{id}/verify"),
+        (HttpMethod::POST, "/viewer/signout"),
         (HttpMethod::POST, "/oauth/token"),
         (HttpMethod::POST, "/oauth/revoke"),
         (HttpMethod::POST, "/webhooks/lemon-squeezy"),
         (HttpMethod::POST, "/checkout/monthly"),
         (HttpMethod::POST, "/checkout/annual"),
+        (HttpMethod::POST, "/api/keys"),
+        (HttpMethod::GET, "/api/keys"),
+        (HttpMethod::DELETE, "/api/keys/{id}"),
+        (HttpMethod::POST, "/api/log-reports"),
+        (HttpMethod::GET, "/api/log-reports"),
         (HttpMethod::POST, "/api/shares"),
         (HttpMethod::GET, "/api/shares"),
+        (HttpMethod::GET, "/api/shares/{id}/access"),
+        (HttpMethod::PATCH, "/api/shares/{id}"),
+        (HttpMethod::PUT, "/api/shares/{id}/members"),
+        (HttpMethod::DELETE, "/api/shares/{id}/members/{memberId}"),
+        (HttpMethod::POST, "/api/shares/{id}/transfer"),
         (HttpMethod::GET, "/api/billing"),
         (HttpMethod::POST, "/api/shares/{id}/blackouts"),
         (HttpMethod::DELETE, "/api/shares/{id}"),
@@ -319,6 +405,28 @@ fn effective_method(method: Method) -> Method {
     } else {
         method
     }
+}
+
+fn share_item_id(path: &str) -> Option<&str> {
+    let id = path.strip_prefix("/api/shares/")?;
+    (!id.is_empty() && !id.contains('/')).then_some(id)
+}
+
+fn share_subresource_id<'a>(path: &'a str, suffix: &str) -> Option<&'a str> {
+    let id = path.strip_prefix("/api/shares/")?.strip_suffix(suffix)?;
+    (!id.is_empty() && !id.contains('/')).then_some(id)
+}
+
+fn share_member_ids(path: &str) -> Option<(&str, &str)> {
+    let value = path.strip_prefix("/api/shares/")?;
+    let (id, member_id) = value.split_once("/members/")?;
+    (!id.is_empty() && !member_id.is_empty() && !id.contains('/') && !member_id.contains('/'))
+        .then_some((id, member_id))
+}
+
+fn viewer_share_id<'a>(path: &'a str, suffix: &str) -> Option<&'a str> {
+    let id = path.strip_prefix("/s/")?.strip_suffix(suffix)?;
+    (!id.is_empty() && !id.contains('/')).then_some(id)
 }
 
 fn without_body(response: Response) -> Response {
@@ -362,6 +470,8 @@ struct ShareInput {
     approved_at: chrono::DateTime<chrono::Utc>,
     messages: Vec<Message>,
     report: footon_core::model::Report,
+    #[serde(default)]
+    general_access: GeneralAccess,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -399,11 +509,22 @@ async fn api_create_share(req: &mut Request, env: &Env) -> Result<Response> {
         log_rejection("share_create", "scope");
         return Response::error("missing scope: shares:write", 403);
     }
-    if !user_has_share_capacity(env, &user.user_id).await? {
-        log_rejection("share_create", "plan_limit");
-        return Response::error("active share limit reached; revoke a share or upgrade", 402);
-    }
     let input = req.json::<ShareInput>().await?;
+    if input.general_access == GeneralAccess::Private {
+        if !private_expansion_enabled(env) {
+            log_rejection("share_create", "feature_disabled");
+            return Response::error("private sharing is temporarily unavailable", 503);
+        }
+        if !user_is_pro(env, &user.user_id).await? {
+            log_rejection("share_create", "pro_required");
+            return Response::error("private sharing requires Pro", 402);
+        }
+        if !user_has_private_share_capacity(env, &user.user_id).await? {
+            log_rejection("share_create", "plan_limit");
+            return Response::error("private share limit reached", 402);
+        }
+    }
+    let general_access = input.general_access;
     let share = Share {
         schema_version: input.schema_version,
         title: input.title,
@@ -428,8 +549,9 @@ async fn api_create_share(req: &mut Request, env: &Env) -> Result<Response> {
     let document_json = serde_json::to_string(&share)?;
     let db = env.d1("DB")?;
     db.prepare(
-        "INSERT INTO shares (id, owner_id, title, document_json, created_at, revoked_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, NULL)",
+        "INSERT INTO shares
+         (id, owner_id, title, document_json, created_at, revoked_at, general_access)
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
     )
     .bind_refs(&[
         D1Type::Text(&id),
@@ -437,6 +559,7 @@ async fn api_create_share(req: &mut Request, env: &Env) -> Result<Response> {
         D1Type::Text(&share.title),
         D1Type::Text(&document_json),
         D1Type::Text(&now),
+        D1Type::Text(general_access.as_db_str()),
     ])?
     .run()
     .await?;
@@ -446,6 +569,7 @@ async fn api_create_share(req: &mut Request, env: &Env) -> Result<Response> {
             id: id.clone(),
             url: format!("{ORIGIN}/s/{id}"),
             created_at: now,
+            general_access,
         },
         201,
     )
@@ -461,7 +585,7 @@ async fn api_list_shares(req: &Request, env: &Env) -> Result<Response> {
     let db = env.d1("DB")?;
     let rows = db
         .prepare(
-            "SELECT id, title, created_at
+            "SELECT id, title, created_at, general_access
              FROM shares
              WHERE owner_id = ?1 AND revoked_at IS NULL
              ORDER BY created_at DESC
@@ -470,7 +594,10 @@ async fn api_list_shares(req: &Request, env: &Env) -> Result<Response> {
         .bind_refs(&[D1Type::Text(&user.user_id)])?
         .all()
         .await?
-        .results::<ListShareRow>()?;
+        .results::<ListShareDbRow>()?
+        .into_iter()
+        .map(ListShareRow::try_from)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
     json_response(&rows)
 }
 
@@ -491,7 +618,7 @@ async fn api_blackout_share(req: &mut Request, env: &Env, id: &str) -> Result<Re
         return Response::error("missing scope: shares:write", 403);
     }
     let input = req.json::<ShareBlackoutInput>().await?;
-    let Some(response) = blackout_owned_share(env, &user.user_id, id, &input).await? else {
+    let Some(response) = blackout_owned_share(env, &user, id, &input).await? else {
         log_rejection("share_blackout", "not_found");
         return Response::error("not found", 404);
     };
@@ -506,13 +633,27 @@ async fn api_blackout_share(req: &mut Request, env: &Env, id: &str) -> Result<Re
 
 async fn blackout_owned_share(
     env: &Env,
-    owner_id: &str,
+    actor: &AuthUser,
     id: &str,
     input: &ShareBlackoutInput,
 ) -> Result<Option<std::result::Result<ShareBlackoutResponse, String>>> {
     validate_share_id(id)?;
-    let Some(mut share) = load_owned_share(env, owner_id, id).await? else {
+    let Some(access) = load_share_access(env, id, Some(&actor.user_id), Some(&actor.email)).await?
+    else {
         return Ok(None);
+    };
+    if !access.allows(ShareAction::Blackout) {
+        return Ok(None);
+    }
+    let Some(record) = load_share(env, id).await? else {
+        return Ok(None);
+    };
+    let mut share = Share {
+        schema_version: record.document.schema_version,
+        title: record.document.title,
+        approved_at: record.document.approved_at,
+        messages: record.document.messages,
+        report: record.document.report,
     };
     let outcome = match blackout(
         &mut share.messages,
@@ -535,12 +676,18 @@ async fn blackout_owned_share(
     env.d1("DB")?
         .prepare(
             "UPDATE shares SET document_json = ?1
-             WHERE id = ?2 AND owner_id = ?3 AND revoked_at IS NULL",
+             WHERE id = ?2 AND revoked_at IS NULL AND (
+               owner_id = ?3 OR EXISTS (
+                 SELECT 1 FROM share_members
+                 WHERE share_id = ?2 AND email = ?4 AND role = 'editor'
+               )
+             )",
         )
         .bind_refs(&[
             D1Type::Text(&document_json),
             D1Type::Text(id),
-            D1Type::Text(owner_id),
+            D1Type::Text(&actor.user_id),
+            D1Type::Text(&actor.email),
         ])?
         .run()
         .await?;
@@ -554,34 +701,6 @@ async fn blackout_owned_share(
     })))
 }
 
-async fn load_owned_share(env: &Env, owner_id: &str, id: &str) -> Result<Option<Share>> {
-    #[derive(Deserialize)]
-    struct Row {
-        document_json: String,
-    }
-
-    env.d1("DB")?
-        .prepare(
-            "SELECT document_json FROM shares
-             WHERE id = ?1 AND owner_id = ?2 AND revoked_at IS NULL",
-        )
-        .bind_refs(&[D1Type::Text(id), D1Type::Text(owner_id)])?
-        .first::<Row>(None)
-        .await?
-        .map(|row| {
-            ShareDocument::from_json(&row.document_json)
-                .map(|document| Share {
-                    schema_version: document.schema_version,
-                    title: document.title,
-                    approved_at: document.approved_at,
-                    messages: document.messages,
-                    report: document.report,
-                })
-                .map_err(|error| worker::Error::RustError(error.to_string()))
-        })
-        .transpose()
-}
-
 async fn api_revoke_share(req: &Request, env: &Env, id: &str) -> Result<Response> {
     let Some(user) = bearer_user(req, env).await? else {
         log_rejection("share_revoke", "authentication");
@@ -592,24 +711,83 @@ async fn api_revoke_share(req: &Request, env: &Env, id: &str) -> Result<Response
         return Response::error("missing scope: shares:write", 403);
     }
     validate_share_id(id)?;
-    env.d1("DB")?
-        .prepare("UPDATE shares SET revoked_at = ?1 WHERE id = ?2 AND owner_id = ?3 AND revoked_at IS NULL")
-        .bind_refs(&[
-            D1Type::Text(&now_string()),
-            D1Type::Text(id),
-            D1Type::Text(&user.user_id),
-        ])?
-        .run()
-        .await?;
+    let Some(access) = load_share_access(env, id, Some(&user.user_id), Some(&user.email)).await?
+    else {
+        return Response::error("not found", 404);
+    };
+    if !access.allows(ShareAction::Revoke) {
+        return Response::error("not found", 404);
+    }
+    let db = env.d1("DB")?;
+    let statements = vec![
+        db.prepare("DELETE FROM share_members WHERE share_id = ?1")
+            .bind_refs(&[D1Type::Text(id)])?,
+        db.prepare("DELETE FROM share_viewer_challenges WHERE share_id = ?1")
+            .bind_refs(&[D1Type::Text(id)])?,
+        db.prepare("UPDATE shares SET revoked_at = ?1 WHERE id = ?2 AND owner_id = ?3 AND revoked_at IS NULL")
+            .bind_refs(&[
+                D1Type::Text(&now_string()),
+                D1Type::Text(id),
+                D1Type::Text(&user.user_id),
+            ])?,
+    ];
+    let results = db.batch(statements).await?;
+    if results
+        .last()
+        .and_then(|result| result.meta().ok().flatten())
+        .and_then(|meta| meta.changes)
+        == Some(0)
+    {
+        return Response::error("not found", 404);
+    }
     Response::empty()
 }
 
 async fn public_share(req: &Request, env: &Env, id: &str) -> Result<Response> {
     validate_share_id(id)?;
+    let user = bearer_user(req, env).await?;
+    let browser = if user.is_none() {
+        access::browser_principal(req, env).await?
+    } else {
+        None
+    };
+    let Some(share_access) = load_share_access(
+        env,
+        id,
+        user.as_ref()
+            .map(|user| user.user_id.as_str())
+            .or_else(|| browser.as_ref().map(|user| user.user_id.as_str())),
+        user.as_ref()
+            .map(|user| user.email.as_str())
+            .or_else(|| browser.as_ref().map(|user| user.email.as_str())),
+    )
+    .await?
+    else {
+        return Response::error("not found", 404);
+    };
+    if !share_access.allows(ShareAction::Read) {
+        let content_type = negotiate(req.headers().get("Accept")?.as_deref());
+        if share_access.general_access == GeneralAccess::Private
+            && user.is_none()
+            && browser.is_none()
+            && content_type == Some(ContentType::Html)
+        {
+            return access::viewer_signin_page(id);
+        }
+        let anonymous = user.is_none() && browser.is_none();
+        return Response::error(
+            if anonymous {
+                "authentication required"
+            } else {
+                "not found"
+            },
+            if anonymous { 401 } else { 404 },
+        );
+    }
     let Some(record) = load_share(env, id).await? else {
         return Response::error("not found", 404);
     };
-    match negotiate(req.headers().get("Accept")?.as_deref()) {
+    let mut response = match negotiate(req.headers().get("Accept")?.as_deref()) {
         None => Response::error("not acceptable", 406),
         Some(ContentType::Markdown) => {
             ui_response::markdown(&messages_to_markdown(&record.document))
@@ -621,7 +799,13 @@ async fn public_share(req: &Request, env: &Env, id: &str) -> Result<Response> {
                 .any(|(key, value)| key == "view" && value == "text");
             ui_response::standard(viewer_page(&record, text_mode).await)
         }
+    }?;
+    if share_access.general_access == GeneralAccess::Private {
+        response
+            .headers_mut()
+            .set("Cache-Control", "private, no-store")?;
     }
+    Ok(response)
 }
 
 async fn load_share(env: &Env, id: &str) -> Result<Option<ShareRecord>> {
@@ -665,14 +849,39 @@ struct CreateShareResponse {
     id: String,
     url: String,
     created_at: String,
+    general_access: GeneralAccess,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
+struct ListShareDbRow {
+    id: String,
+    title: String,
+    created_at: String,
+    general_access: String,
+}
+
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ListShareRow {
     id: String,
     title: String,
     created_at: String,
+    general_access: GeneralAccess,
+}
+
+impl TryFrom<ListShareDbRow> for ListShareRow {
+    type Error = worker::Error;
+
+    fn try_from(row: ListShareDbRow) -> std::result::Result<Self, Self::Error> {
+        let general_access = GeneralAccess::from_db(&row.general_access)
+            .ok_or_else(|| worker::Error::RustError("invalid stored general access".to_string()))?;
+        Ok(Self {
+            id: row.id,
+            title: row.title,
+            created_at: row.created_at,
+            general_access,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -703,7 +912,12 @@ async fn oauth_register(req: &mut Request, env: &Env) -> Result<Response> {
     for redirect_uri in &input.redirect_uris {
         validate_redirect_uri(redirect_uri)?;
     }
-    let scope = clean_scope(input.scope.as_deref().unwrap_or("shares:read shares:write"))?;
+    let scope = clean_scope(
+        input
+            .scope
+            .as_deref()
+            .unwrap_or("keys:manage logs:read shares:read shares:write"),
+    )?;
     let client_id = format!("fc_{}", token(24));
     let client_name = input
         .client_name
@@ -817,6 +1031,7 @@ struct RefreshRow {
 #[derive(Deserialize)]
 struct AccessTokenRow {
     user_id: String,
+    email: String,
     scope: String,
     expires_at: String,
     revoked_at: Option<String>,
@@ -844,7 +1059,12 @@ async fn auth_request(req: &mut Request, env: &Env) -> Result<Response> {
         return Response::error("redirect_uri is not registered", 400);
     }
     validate_resource(&input.resource)?;
-    let scope = clean_scope(input.scope.as_deref().unwrap_or("shares:read shares:write"))?;
+    let scope = clean_scope(
+        input
+            .scope
+            .as_deref()
+            .unwrap_or("keys:manage logs:read shares:read shares:write"),
+    )?;
     if !scope_is_subset(&scope, &client.scope) {
         log_rejection("auth_request", "scope");
         return Response::error("requested scope exceeds client registration", 400);
@@ -1256,9 +1476,23 @@ async fn load_client(env: &Env, client_id: &str) -> Result<OAuthClient> {
 }
 
 #[derive(Debug, Clone)]
+enum CredentialKind {
+    Interactive,
+    Service { key_id: String, system: String },
+}
+
+#[derive(Debug, Clone)]
 struct AuthUser {
     user_id: String,
+    email: String,
     scope: String,
+    credential: CredentialKind,
+}
+
+impl AuthUser {
+    const fn is_interactive(&self) -> bool {
+        matches!(self.credential, CredentialKind::Interactive)
+    }
 }
 
 async fn bearer_user(req: &Request, env: &Env) -> Result<Option<AuthUser>> {
@@ -1267,21 +1501,23 @@ async fn bearer_user(req: &Request, env: &Env) -> Result<Option<AuthUser>> {
         return Ok(None);
     };
     let token_hash = hash(token_value);
-    let Some(row) = env
+    let row = env
         .d1("DB")?
-        .prepare("SELECT user_id, scope, expires_at, revoked_at FROM oauth_access_tokens_v2 WHERE token_hash = ?1")
+        .prepare("SELECT user_id, email, scope, expires_at, revoked_at FROM oauth_access_tokens_v2 WHERE token_hash = ?1")
         .bind_refs(&[D1Type::Text(&token_hash)])?
         .first::<AccessTokenRow>(None)
-        .await?
-    else {
-        return Ok(None);
+        .await?;
+    let Some(row) = row else {
+        return systems::authenticate_service_key(env, &token_hash).await;
     };
     if row.revoked_at.is_some() || parse_time(&row.expires_at).timestamp() < unix_now() {
         return Ok(None);
     }
     Ok(Some(AuthUser {
         user_id: row.user_id,
+        email: row.email,
         scope: row.scope,
+        credential: CredentialKind::Interactive,
     }))
 }
 
@@ -1351,6 +1587,7 @@ fn mcp_protocol_version(params: Option<&serde_json::Value>) -> &str {
         .unwrap_or("2025-11-25")
 }
 
+#[allow(clippy::too_many_lines)]
 fn mcp_tools() -> serde_json::Value {
     serde_json::json!([
         {
@@ -1358,19 +1595,86 @@ fn mcp_tools() -> serde_json::Value {
             "description": "Publish one approved sanitized share",
             "inputSchema": {
                 "type": "object",
-                "required": ["schemaVersion", "title", "messages", "approval"],
+                "required": ["schemaVersion", "title", "approvedAt", "messages", "report"],
                 "properties": {
                     "schemaVersion": { "type": "string", "const": "footon.share.v2" },
                     "title": { "type": "string" },
+                    "approvedAt": { "type": "string", "format": "date-time" },
                     "messages": { "type": "array", "items": { "type": "object" } },
-                    "approval": { "type": "object" }
-                }
+                    "report": { "type": "object" },
+                    "generalAccess": { "type": "string", "enum": ["public", "private"], "default": "public" }
+                },
+                "additionalProperties": false
             }
         },
         {
             "name": "share_list",
             "description": "List your active Footon shares",
             "inputSchema": { "type": "object", "additionalProperties": false }
+        },
+        {
+            "name": "share_access",
+            "description": "Show a share owner, visibility, and private members",
+            "inputSchema": {
+                "type": "object",
+                "required": ["id"],
+                "properties": { "id": { "type": "string" } },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "share_update",
+            "description": "Rename a share or change public/private visibility",
+            "inputSchema": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+                    "generalAccess": { "type": "string", "enum": ["public", "private"] }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "share_grant",
+            "description": "Grant a Viewer or Editor role on a private share",
+            "inputSchema": {
+                "type": "object",
+                "required": ["id", "email", "role"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "email": { "type": "string" },
+                    "role": { "type": "string", "enum": ["viewer", "editor"] }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "share_remove",
+            "description": "Remove one member from a private share",
+            "inputSchema": {
+                "type": "object",
+                "required": ["id", "email"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "email": { "type": "string" }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "share_transfer",
+            "description": "Transfer ownership of one share",
+            "inputSchema": {
+                "type": "object",
+                "required": ["id", "email"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "email": { "type": "string" }
+                },
+                "additionalProperties": false
+            }
         },
         {
             "name": "share_blackout",
@@ -1395,6 +1699,65 @@ fn mcp_tools() -> serde_json::Value {
                 "properties": { "id": { "type": "string" } },
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "service_key_create",
+            "description": "Issue one scoped key for a named remote system; the secret is returned once",
+            "inputSchema": {
+                "type": "object",
+                "required": ["name", "system"],
+                "properties": {
+                    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+                    "system": { "type": "string", "minLength": 1, "maxLength": 64 },
+                    "scope": { "type": "string", "default": "logs:write" },
+                    "expiresInDays": { "type": "integer", "minimum": 1, "maximum": 365, "default": 90 }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "service_key_list",
+            "description": "List service key metadata without returning secrets",
+            "inputSchema": { "type": "object", "additionalProperties": false }
+        },
+        {
+            "name": "service_key_revoke",
+            "description": "Revoke one service key immediately",
+            "inputSchema": {
+                "type": "object",
+                "required": ["id"],
+                "properties": { "id": { "type": "string" } },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "log_report_create",
+            "description": "Submit one bounded, automatically redacted remote-system log report",
+            "inputSchema": {
+                "type": "object",
+                "required": ["environment", "level", "event", "summary", "sourceEventId", "occurredAt"],
+                "properties": {
+                    "environment": { "type": "string", "minLength": 1, "maxLength": 64 },
+                    "level": { "type": "string", "enum": ["debug", "info", "warn", "error", "critical"] },
+                    "event": { "type": "string", "minLength": 1, "maxLength": 100 },
+                    "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+                    "sourceEventId": { "type": "string", "minLength": 1, "maxLength": 160 },
+                    "occurredAt": { "type": "string", "format": "date-time" }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "log_report_list",
+            "description": "List recent remote-system reports visible to this credential",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "system": { "type": "string" },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+                },
+                "additionalProperties": false
+            }
         }
     ])
 }
@@ -1407,6 +1770,7 @@ fn mcp_tool_result(value: &serde_json::Value) -> serde_json::Value {
     })
 }
 
+#[allow(clippy::too_many_lines)]
 async fn call_tool(
     env: &Env,
     user: &AuthUser,
@@ -1422,15 +1786,58 @@ async fn call_tool(
         .cloned()
         .unwrap_or_else(|| serde_json::json!({}));
     match name {
+        "service_key_create" => {
+            require_scope(user, "keys:manage")?;
+            systems::tool_create_key(env, user, args).await
+        }
+        "service_key_list" => {
+            require_scope(user, "keys:manage")?;
+            systems::tool_list_keys(env, user).await
+        }
+        "service_key_revoke" => {
+            require_scope(user, "keys:manage")?;
+            systems::tool_revoke_key(env, user, args).await
+        }
+        "log_report_create" => {
+            require_scope(user, "logs:write")?;
+            systems::tool_create_report(env, user, args).await
+        }
+        "log_report_list" => {
+            require_scope(user, "logs:read")?;
+            systems::tool_list_reports(env, user, args).await
+        }
+        "share_access" => {
+            require_scope(user, "shares:read")?;
+            shares::tool_access(env, user, args).await
+        }
+        "share_update" => {
+            require_scope(user, "shares:write")?;
+            shares::tool_update(env, user, args).await
+        }
+        "share_grant" => {
+            require_scope(user, "shares:write")?;
+            shares::tool_grant(env, user, args).await
+        }
+        "share_remove" => {
+            require_scope(user, "shares:write")?;
+            shares::tool_remove(env, user, args).await
+        }
+        "share_transfer" => {
+            require_scope(user, "shares:write")?;
+            shares::tool_transfer(env, user, args).await
+        }
         "share_list" => {
             require_scope(user, "shares:read")?;
             let rows = env
                 .d1("DB")?
-                .prepare("SELECT id, title, created_at FROM shares WHERE owner_id = ?1 AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 50")
+                .prepare("SELECT id, title, created_at, general_access FROM shares WHERE owner_id = ?1 AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 50")
                 .bind_refs(&[D1Type::Text(&user.user_id)])?
                 .all()
                 .await?
-                .results::<ListShareRow>()?;
+                .results::<ListShareDbRow>()?
+                .into_iter()
+                .map(ListShareRow::try_from)
+                .collect::<std::result::Result<Vec<_>, _>>()?;
             Ok(serde_json::to_value(rows)?)
         }
         "share_revoke" => {
@@ -1458,7 +1865,7 @@ async fn call_tool(
                 message: tool_input.message,
                 text: tool_input.text,
             };
-            blackout_owned_share(env, &user.user_id, &tool_input.id, &input)
+            blackout_owned_share(env, user, &tool_input.id, &input)
                 .await?
                 .ok_or_else(|| worker::Error::RustError("share not found".to_string()))?
                 .map_err(worker::Error::RustError)
@@ -1466,9 +1873,23 @@ async fn call_tool(
         }
         "share_create" => {
             require_scope(user, "shares:write")?;
-            if !user_has_share_capacity(env, &user.user_id).await? {
+            let mut args = args;
+            let general_access = args
+                .get("generalAccess")
+                .cloned()
+                .map(serde_json::from_value::<GeneralAccess>)
+                .transpose()?
+                .unwrap_or_default();
+            if let Some(object) = args.as_object_mut() {
+                object.remove("generalAccess");
+            }
+            if general_access == GeneralAccess::Private
+                && (!private_expansion_enabled(env)
+                    || !user_is_pro(env, &user.user_id).await?
+                    || !user_has_private_share_capacity(env, &user.user_id).await?)
+            {
                 return Err(worker::Error::RustError(
-                    "active share limit reached; revoke a share or upgrade".to_string(),
+                    "private sharing requires available Pro capacity".to_string(),
                 ));
             }
             let share = serde_json::from_value::<Share>(args)?;
@@ -1484,17 +1905,20 @@ async fn call_tool(
             let now = now_string();
             let document_json = serde_json::to_string(&share)?;
             env.d1("DB")?
-                .prepare("INSERT INTO shares (id, owner_id, title, document_json, created_at, revoked_at) VALUES (?1, ?2, ?3, ?4, ?5, NULL)")
+                .prepare("INSERT INTO shares (id, owner_id, title, document_json, created_at, revoked_at, general_access) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)")
                 .bind_refs(&[
                     D1Type::Text(&id),
                     D1Type::Text(&user.user_id),
                     D1Type::Text(&share.title),
                     D1Type::Text(&document_json),
                     D1Type::Text(&now),
+                    D1Type::Text(general_access.as_db_str()),
                 ])?
                 .run()
                 .await?;
-            Ok(serde_json::json!({ "id": id, "url": format!("{ORIGIN}/s/{id}"), "createdAt": now }))
+            Ok(
+                serde_json::json!({ "id": id, "url": format!("{ORIGIN}/s/{id}"), "createdAt": now, "generalAccess": general_access }),
+            )
         }
         _ => Err(worker::Error::RustError("unknown tool".to_string())),
     }
@@ -1504,7 +1928,8 @@ fn authorization_page(url: &Url) -> AuthorizationPage {
     AuthorizationPage {
         client_id: query(url, "client_id").unwrap_or_default(),
         redirect_uri: query(url, "redirect_uri").unwrap_or_default(),
-        scope: query(url, "scope").unwrap_or_else(|| "shares:read shares:write".to_string()),
+        scope: query(url, "scope")
+            .unwrap_or_else(|| "keys:manage logs:read shares:read shares:write".to_string()),
         state: query(url, "state").unwrap_or_default(),
         code_challenge: query(url, "code_challenge").unwrap_or_default(),
         resource: query(url, "resource").unwrap_or_else(|| format!("{ORIGIN}/mcp")),
@@ -1522,7 +1947,7 @@ fn authorization_server_metadata() -> serde_json::Value {
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
-        "scopes_supported": ["shares:read", "shares:write"]
+        "scopes_supported": ["keys:manage", "logs:read", "logs:write", "shares:read", "shares:write"]
     })
 }
 
@@ -1530,7 +1955,7 @@ fn protected_resource_metadata() -> serde_json::Value {
     serde_json::json!({
         "resource": format!("{ORIGIN}/mcp"),
         "authorization_servers": [ORIGIN],
-        "scopes_supported": ["shares:read", "shares:write"],
+        "scopes_supported": ["keys:manage", "logs:read", "logs:write", "shares:read", "shares:write"],
         "bearer_methods_supported": ["header"]
     })
 }
@@ -1562,10 +1987,12 @@ fn clean_scope(scope: &str) -> Result<String> {
     let mut parts = scope.split_whitespace().collect::<Vec<_>>();
     parts.sort_unstable();
     parts.dedup();
-    if parts
-        .iter()
-        .all(|scope| matches!(*scope, "shares:read" | "shares:write"))
-    {
+    if parts.iter().all(|scope| {
+        matches!(
+            *scope,
+            "keys:manage" | "logs:read" | "logs:write" | "shares:read" | "shares:write"
+        )
+    }) {
         Ok(parts.join(" "))
     } else {
         Err(worker::Error::RustError("unsupported scope".to_string()))
@@ -1733,6 +2160,18 @@ fn svg_response(svg: &str) -> Result<Response> {
 
 fn log_rejection(operation: &str, reason: &str) {
     worker::console_error!("operation={operation} result=rejected reason={reason}");
+}
+
+fn private_expansion_enabled(env: &Env) -> bool {
+    let value = env
+        .var("SHARE_ACCESS_WRITES_ENABLED")
+        .ok()
+        .map(|value| value.to_string());
+    flag_enabled(value.as_deref())
+}
+
+fn flag_enabled(value: Option<&str>) -> bool {
+    value.is_some_and(|value| value.eq_ignore_ascii_case("true") || value == "1")
 }
 
 fn internal_error(_error: &worker::Error) -> Result<Response> {
@@ -1999,6 +2438,14 @@ mod tests {
     }
 
     #[test]
+    fn private_expansion_flag_fails_closed() {
+        assert!(flag_enabled(Some("true")));
+        assert!(flag_enabled(Some("1")));
+        assert!(!flag_enabled(Some("false")));
+        assert!(!flag_enabled(None));
+    }
+
+    #[test]
     fn checkout_url_is_bounded_and_associates_the_normalized_buyer() {
         let url = billing_adapter::build_checkout_url(
             "https://footon.lemonsqueezy.com/checkout/buy/monthly?discount=launch",
@@ -2037,7 +2484,15 @@ mod tests {
             clean_scope("shares:write shares:read shares:read").expect("scope"),
             "shares:read shares:write"
         );
+        assert_eq!(
+            clean_scope("logs:read keys:manage").expect("interactive scopes"),
+            "keys:manage logs:read"
+        );
         assert!(scope_is_subset("shares:read", "shares:read shares:write"));
+        assert!(scope_is_subset(
+            "logs:read",
+            "keys:manage logs:read shares:read"
+        ));
         assert!(!scope_is_subset("shares:write", "shares:read"));
         assert!(clean_scope("read write").is_err());
     }
@@ -2132,8 +2587,31 @@ mod tests {
 
         let tools = mcp_tools();
         let tools = tools.as_array().expect("tool list");
-        assert_eq!(tools.len(), 4);
+        assert_eq!(tools.len(), 14);
         assert!(tools.iter().all(|tool| tool.get("inputSchema").is_some()));
+        let names = tools
+            .iter()
+            .filter_map(|tool| tool.get("name").and_then(serde_json::Value::as_str))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            vec![
+                "share_create",
+                "share_list",
+                "share_access",
+                "share_update",
+                "share_grant",
+                "share_remove",
+                "share_transfer",
+                "share_blackout",
+                "share_revoke",
+                "service_key_create",
+                "service_key_list",
+                "service_key_revoke",
+                "log_report_create",
+                "log_report_list",
+            ]
+        );
 
         let result = mcp_tool_result(&serde_json::json!({ "ok": true }));
         assert_eq!(result["content"][0]["type"], "text");
@@ -2196,7 +2674,7 @@ mod tests {
         assert!(
             commands
                 .iter()
-                .any(|command| command.contains("cargo install --git"))
+                .any(|command| command.contains("cargo install footon --locked"))
         );
         assert!(
             commands

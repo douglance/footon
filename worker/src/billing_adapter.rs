@@ -137,7 +137,29 @@ pub(crate) async fn lemon_squeezy_webhook(req: &mut Request, env: &Env) -> Resul
     Ok(Response::empty()?.with_status(204))
 }
 
-pub(crate) async fn user_has_share_capacity(env: &Env, user_id: &str) -> Result<bool> {
+pub(crate) async fn user_is_pro(env: &Env, user_id: &str) -> Result<bool> {
+    #[derive(Deserialize)]
+    struct Row {
+        active: i64,
+    }
+
+    let now = crate::now_string();
+    let row = env
+        .d1("DB")?
+        .prepare(
+            "SELECT EXISTS (
+               SELECT 1 FROM user_entitlements
+               WHERE user_id = ?1 AND plan = 'pro'
+                 AND revoked_at IS NULL AND valid_until > ?2
+             ) AS active",
+        )
+        .bind_refs(&[D1Type::Text(user_id), D1Type::Text(&now)])?
+        .first::<Row>(None)
+        .await?;
+    Ok(row.is_some_and(|row| row.active == 1))
+}
+
+pub(crate) async fn user_has_private_share_capacity(env: &Env, user_id: &str) -> Result<bool> {
     let now = crate::now_string();
     let row = env
         .d1("DB")?
@@ -153,7 +175,8 @@ pub(crate) async fn user_has_share_capacity(env: &Env, user_id: &str) -> Result<
                    AND valid_until > ?2
                ), ?3) AS active_share_limit
              FROM shares
-             WHERE owner_id = ?1 AND revoked_at IS NULL",
+             WHERE owner_id = ?1 AND revoked_at IS NULL
+               AND general_access = 'restricted'",
         )
         .bind_refs(&[
             D1Type::Text(user_id),
@@ -179,7 +202,8 @@ pub(crate) async fn billing_status(env: &Env, user_id: &str) -> Result<Response>
         .prepare(
             "SELECT
                (SELECT COUNT(*) FROM shares
-                WHERE owner_id = ?1 AND revoked_at IS NULL) AS active_shares,
+                WHERE owner_id = ?1 AND revoked_at IS NULL
+                  AND general_access = 'restricted') AS active_shares,
                CASE WHEN EXISTS (
                  SELECT 1 FROM user_entitlements
                  WHERE user_id = ?1 AND plan = 'pro'

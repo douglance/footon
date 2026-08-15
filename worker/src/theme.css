@@ -49,6 +49,33 @@ h1 { max-width: 820px; margin: 5px 0 10px; font-size: clamp(20px, 3vw, 30px); li
 p { margin: 8px 0; }
 a { color: inherit; text-underline-offset: .16em; }
 code, pre { font-family: inherit; }
+
+.access-page { padding-inline: 0; }
+.access-page .access-shell {
+  width: 100%;
+  max-width: 448px;
+  min-height: 100vh;
+  margin-inline: auto;
+  padding: 48px 20px;
+  display: flex;
+  align-items: center;
+}
+.access-page .access-header {
+  position: static;
+  width: auto;
+  max-width: none;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  display: block;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.access-page .access-header h1 { max-width: none; margin: 0; font-size: 24px; }
+.access-page .access-header p { margin: 0; }
 pre { max-width: 900px; overflow: auto; margin: 14px 0; padding: 12px 14px; background: var(--panel); color: #c8d2ca; }
 
 .landing-page { padding-inline: 24px; }

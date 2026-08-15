@@ -34,6 +34,8 @@ pub enum Error {
     Signin(String),
     #[error("session failed: {0}")]
     Session(String),
+    #[error("share access request failed: {0}")]
+    Access(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

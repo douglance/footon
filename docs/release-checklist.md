@@ -19,8 +19,17 @@ Release operator: `________________`  Reviewer: `________________`
 
 - [ ] Pricing, limits, checkout, entitlement, customer portal, cancellation,
       renewal, refund, and duplicate-webhook behavior passed test mode.
+- [ ] Public creation is free without Pro; private creation and expansion are
+      restricted to Pro and the configured private-share limit.
+- [ ] Owner, Editor, Viewer, anonymous, and revoked access cases passed over
+      HTTP, CLI, browser sign-in, local MCP, and remote MCP.
 - [ ] Privacy, terms, refund, security, pricing, and support copy is approved.
 - [ ] The private support channel is monitored and its recovery procedure works.
+- [ ] A Pro owner can issue, list, use, and revoke a service key; the secret is
+      returned only at issuance, stored only as a hash, and rejected after revoke.
+- [ ] A remote-system report is idempotent by key and source event, redacts a
+      seeded bearer token before storage, respects owner/key isolation, and ages
+      out after 30 days.
 - [ ] No known critical or high security defect remains open.
 - [ ] Files over 500 production lines have an accepted split plan.
 
@@ -44,6 +53,8 @@ Release operator: `________________`  Reviewer: `________________`
 
 - [ ] GitHub release is published only after production smoke acceptance.
 - [ ] Crate publication order is `footon-core`, then `footon`.
+- [ ] `cargo install footon --version <version> --locked` succeeds from crates.io
+      in an isolated Cargo home and `footon --version` reports that version.
 - [ ] Release URLs, crate manifests, bundle digest, deployment ID, migration list,
       screenshots, timings, and smoke report are archived together.
 - [ ] Release operator and reviewer signed the result.

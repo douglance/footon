@@ -11,7 +11,7 @@ use crate::ui::{
 };
 
 pub(crate) const LANDING_JS: &str = include_str!("../landing.js");
-const INSTALL_PROMPT: &str = "Install Footon for this workspace. Run `cargo install --git https://github.com/douglance/footon footon`, then run `footon --help` to verify the install. Report any error without exposing credentials or private paths.";
+const INSTALL_PROMPT: &str = "Install Footon for this workspace. Run `cargo install footon --locked`, then run `footon --help` to verify the install. Report any error without exposing credentials or private paths.";
 const SHARE_COMMAND: &str = "footon signin you@example.com\nfooton draft thread.jsonl --title \"Public title\" --output footon-draft.json\nfooton publish footon-draft.json";
 const BLACKOUT_COMMAND: &str = "footon blackout footon-draft.json 12 \"exact private text\"\nfooton blackout-share https://footon.dev/s/... 12 \"exact private text\"";
 const FETCH_COMMAND: &str = "footon fetch https://footon.dev/s/...";
@@ -48,7 +48,7 @@ Ready to share. 4 redactions. [BLACKED OUT]
 ## Agent prompt
 
 ```text
-Install Footon for this workspace. Run `cargo install --git https://github.com/douglance/footon footon`, then run `footon --help` to verify the install. Report any error without exposing credentials or private paths.
+Install Footon for this workspace. Run `cargo install footon --locked`, then run `footon --help` to verify the install. Report any error without exposing credentials or private paths.
 ```
 
 ## Draft, review, and publish

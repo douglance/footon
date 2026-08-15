@@ -6,12 +6,30 @@ use url::Url;
 use crate::error::{Error, Result};
 use crate::model::{Draft, Share};
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum GeneralAccess {
+    #[default]
+    Public,
+    Private,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishResponse {
     pub id: String,
     pub url: String,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub general_access: GeneralAccess,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PublishRequest<'a> {
+    #[serde(flatten)]
+    share: &'a Share,
+    general_access: GeneralAccess,
 }
 
 /// Validate a sanitized draft and stamp the explicit approval time.
@@ -46,11 +64,29 @@ pub fn validate_endpoint(endpoint: &str) -> Result<Url> {
 /// Returns an error for unsafe endpoints, transport failures, non-201 responses,
 /// or malformed response bodies.
 pub async fn send(endpoint: &str, token: &str, share: &Share) -> Result<PublishResponse> {
+    send_with_access(endpoint, token, share, GeneralAccess::Public).await
+}
+
+/// Publish an approved share with explicit public or private access.
+///
+/// # Errors
+///
+/// Returns an error for unsafe endpoints, transport failures, non-201 responses,
+/// or malformed response bodies.
+pub async fn send_with_access(
+    endpoint: &str,
+    token: &str,
+    share: &Share,
+    general_access: GeneralAccess,
+) -> Result<PublishResponse> {
     let url = validate_endpoint(endpoint)?;
     let response = reqwest::Client::new()
         .post(url)
         .bearer_auth(token)
-        .json(share)
+        .json(&PublishRequest {
+            share,
+            general_access,
+        })
         .send()
         .await
         .map_err(|error| Error::Publish(error.to_string()))?;

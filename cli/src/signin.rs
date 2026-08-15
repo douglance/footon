@@ -14,7 +14,7 @@ use crate::error::{Error, Result};
 use crate::session::{CredentialStore, StoredSession};
 
 const REDIRECT_URI: &str = "http://127.0.0.1/callback";
-const SCOPE: &str = "shares:read shares:write";
+const SCOPE: &str = "keys:manage logs:read shares:read shares:write";
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -245,6 +245,25 @@ pub fn read_code(
     let mut code = String::new();
     reader.read_line(&mut code).map_err(signin_error)?;
     normalize_code(&code).map(str::to_string)
+}
+
+/// Prompt for the account email when no positional email or stored account exists.
+///
+/// # Errors
+///
+/// Returns an error when the prompt cannot be written, stdin cannot be read,
+/// or the value is empty.
+pub fn read_email(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<String> {
+    write!(writer, "Email: ").map_err(signin_error)?;
+    writer.flush().map_err(signin_error)?;
+    let mut email = String::new();
+    reader.read_line(&mut email).map_err(signin_error)?;
+    let email = email.trim();
+    if email.is_empty() {
+        Err(Error::Signin("email is required".to_string()))
+    } else {
+        Ok(email.to_string())
+    }
 }
 
 fn validate_origin(origin: &str) -> Result<Url> {
