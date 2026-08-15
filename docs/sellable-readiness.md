@@ -4,7 +4,7 @@ Status: in review
 Version: 0.1
 Owner: Product owner
 Approvers: Douglas Lance
-Inputs: User goal "finalize all work. professionalize it and we will begin selling"; repository baseline cd51b2b; production deployment 514d05e0-9646-4c66-9613-0c8e12fedb38
+Inputs: User goal "finalize all work. professionalize it and we will begin selling"; release source tag be7c91a92f0f3644d5dfa9aaef1753cf79c292bc; release-workflow revision cbc161257576a35b2867ef21d7c4f0b48c8d75f5; production Worker version 514d05e0-9646-4c66-9613-0c8e12fedb38
 Governing references: ISO/IEC/IEEE 29148:2018 information model; ISO/IEC/IEEE 15289:2019 information-item model; README.md; cli/README.md; wrangler.jsonc
 Tailoring: This specification combines product, quality, release, and launch requirements owned by the product-owner phase. It does not claim formal standards conformance or legal review.
 
@@ -12,15 +12,16 @@ Tailoring: This specification combines product, quality, release, and launch req
 
 ## Problem
 
-Footon has a complete safety-first release candidate, but the repository and
-production service do not yet form a sellable release baseline.
+Footon has a committed, pushed, and packaged safety-first release candidate,
+but the production service does not yet form a sellable release baseline.
 
-The finalized Worker and CLI remain uncommitted and undeployed. Production D1
-now includes the billing schema, but production still serves an older Worker
-without the health, commercial, support, or billing routes. Secure reusable CLI
-sessions are implemented locally but still require live acceptance. Lemon
-Squeezy catalog, checkout, and webhook configuration remain unavailable until an
-operator supplies account credentials and creates the dashboard-only variants.
+The `v0.1.0` source tag, green CI record, and verified draft release artifacts
+now exist. Production D1 includes the billing schema, but production still
+serves an older Worker without the health, commercial, support, or billing
+routes. Secure reusable CLI sessions are implemented and tested but still
+require live email-code acceptance. Lemon Squeezy catalog, checkout, and webhook
+configuration remain unavailable until an operator supplies account credentials
+and creates the dashboard-only variants.
 
 ## Scope
 
@@ -135,7 +136,7 @@ The first paid release serves individual developers. Team and enterprise capabil
 ## Risks
 
 - RISK-001 Lemon Squeezy API authentication and catalog setup are not configured. This blocks live checkout and webhook proof.
-- RISK-003 Production includes uncommitted code. A local loss could make the deployed version unreproducible.
+- RISK-003 Production remains on an older Worker version. The current production service does not reproduce the tagged release candidate until the controlled deployment and smoke test succeed.
 - RISK-004 The paid legal draft has not received legal review, and delivery to `support@footon.dev` is not yet verified.
 - RISK-005 `worker/src/lib.rs` exceeds 2,600 lines, increasing review and release risk. The recorded split plan below limits further growth.
 - RISK-006 Stored CLI credentials add a local secret-management dependency that requires platform-specific tests and recovery behavior.
@@ -180,12 +181,12 @@ rendered-page smoke checks used for v0.1.0.
 | Claim or requirement | Repository or live evidence | Interpretation | Confidence |
 | --- | --- | --- | --- |
 | Footon is local-first and safety-oriented | `README.md:3`, `README.md:60`; `cli/README.md:26` | Current public contract preserves local drafting and explicit token injection. | High |
-| The complete repository release gate passes | Apoc execution `01a0037d-22e6-7081-8dc9-c39bd3d91c2c`; `npm run verify:release` on 2026-08-15 | Formatting, strict Clippy, 84 executable Rust tests, release Wasm build, RustSec audit of 394 dependencies, npm audit with zero vulnerabilities, and clean package verification passed. Four component doctest examples remain intentionally ignored. | High |
+| The complete repository release gate passes | Apoc execution `01a0037d-22e6-7081-8dc9-c39bd3d91c2c`; GitHub CI run `31867295310`; `npm run verify:release` on 2026-08-15 | Formatting, strict Clippy, 84 executable Rust tests, release Wasm build, RustSec audit of 394 dependencies, npm audit with zero vulnerabilities, and clean package verification passed. Four component doctest examples remain intentionally ignored. CI succeeded on main commit `cbc161257576a35b2867ef21d7c4f0b48c8d75f5`. | High |
 | Required browser surfaces pass local rendered acceptance | `/tmp/footon-visual-acceptance-20260815-0308`; isolated `agent-browser` session on 2026-08-15 | Landing, pricing, security, support, privacy, terms, authorization, and public-share pages were inspected at 1440x900, 1024x768, and 390x844 with no horizontal overflow. Axe reported zero violations after fixes; the scrollable minimap moved from `scrollTop` 0 to 350 by keyboard and updated `aria-valuenow`. Local landing/pricing measurements were TTFB 7.1/2.9 ms, FCP/LCP 108/100 ms, and CLS 0. | High |
 | CLI session work is not live-accepted | `cli/src/session.rs`; `cli/tests/session.rs`; `cli/tests/signin.rs` | Mock OAuth tests cover storage, rotation, safe output, and sign-out; a fresh production code flow remains required. | Medium |
 | Commercial and legal routes are implemented locally | `worker/src/ui/commercial.rs`; `worker/src/ui/pages.rs`; `worker/src/lib.rs` | Pricing, security, support, privacy, and terms are available as HTML and Markdown. Operator, billing, retention, cancellation, refund, and private-contact copy is drafted but not approved or deployed. | High |
-| Production and Git are divergent | Wrangler deployment `514d05e0-9646-4c66-9613-0c8e12fedb38`; `git status --short`; production `/healthz` returned `404` on 2026-08-15 | Email-code OAuth is live, but the finalized health, commercial, support, and billing release candidate remains uncommitted and undeployed. | High |
-| CI and release records are absent | GitHub `latestRelease: null`; `gh run list` returned `[]` | The public repository has no current automated release proof. | High |
+| Production and the tagged release are divergent | Wrangler Worker version `514d05e0-9646-4c66-9613-0c8e12fedb38`; tag `v0.1.0` at `be7c91a92f0f3644d5dfa9aaef1753cf79c292bc`; production `/healthz` returned `404` on 2026-08-15 | Email-code OAuth is live, but the finalized health, commercial, support, and billing release candidate remains undeployed. | High |
+| CI and draft release records are current | GitHub CI run `31867295310`; release run `31867732822`; draft `Footon v0.1.0`; eight archive and checksum assets independently verified on 2026-08-15 | Main is clean and pushed, CI is green, the immutable source tag exists, and the four native CLI packages have portable checksums. The release intentionally remains a draft until production deployment and paid-service acceptance succeed. | High |
 | Billing core is locally implemented; activation is unavailable | `worker/src/billing.rs`; `worker/src/billing_adapter.rs`; `migrations/0005_billing.sql`; local signed-webhook runtime on 2026-08-15 | Signature verification, replay protection, entitlement transitions, limits, checkout URL construction, and authenticated billing status are locally proven. No real store, variant, checkout, or webhook can be verified without Lemon Squeezy access. | High |
 | Production D1 administration and billing schema are current | Apoc executions `01a0038c-21de-7022-87a4-94aab60e04ae`, `01a0038c-d453-7290-9cc1-188dfb88e5e8`, and `01a0038d-5d5b-7fe3-9677-ea63e13374b2`; post-migration bookmark `00000090-00000002-000050c8-a40bd268cc6baae0fdf60bca165d91c8` | Direct remote reads succeed, `0005_billing.sql` is applied, no migrations remain, and all three billing tables exist. | High |
 | Outbound email configuration is current | Wrangler Email Sending and destination-address reads on 2026-08-15; public DNS MX, SPF, DKIM, and DMARC resolution | `footon.dev` sending is enabled and the launch account address is a verified destination. Final personal-inbox receipt and CLI exchange remain pending. | High |
@@ -194,15 +195,16 @@ rendered-page smoke checks used for v0.1.0.
 ## Open items
 
 - OPEN-COM-001 Owner: Douglas Lance. Configure a Lemon Squeezy API key and create the Footon Pro monthly and annual variants. Effect: blocks live checkout, webhook, and entitlement acceptance.
-- OPEN-REL-001 Owner: Release operator and reviewer. Commit and push the release candidate, obtain green CI, tag v0.1.0, deploy that exact revision, and record the production smoke and rollback evidence. Effect: blocks a reproducible production release.
+- OPEN-AUTH-001 Owner: Douglas Lance and release operator. Complete one live CLI email-code sign-in and record the credential-safe exit status and authenticated status result. Effect: blocks live acceptance of the default sign-in path.
+- OPEN-REL-001 Owner: Release operator and reviewer. Supply a scoped Cloudflare API token to the GitHub `production` environment, deploy `v0.1.0` with Worker version `514d05e0-9646-4c66-9613-0c8e12fedb38` recorded as the rollback target, and record the production smoke and rollback evidence. The environment and `CLOUDFLARE_ACCOUNT_ID` already exist. Effect: blocks a reproducible production release.
 - OPEN-LEGAL-001 Owner: Douglas Lance. Approve Douglas Lance as the named operator, verify and monitor `support@footon.dev`, approve the non-refundable-except-law policy, and approve the final legal copy. Effect: blocks declaring the paid terms approved.
 
 ## Handoff
 
 Receiver: Release operations
-Accepted inputs: FOOTON-SRS-001 version 0.1; repository cd51b2b; production Worker 514d05e0-9646-4c66-9613-0c8e12fedb38
+Accepted inputs: FOOTON-SRS-001 version 0.1; release source tag be7c91a92f0f3644d5dfa9aaef1753cf79c292bc; release-workflow revision cbc161257576a35b2867ef21d7c4f0b48c8d75f5; production Worker 514d05e0-9646-4c66-9613-0c8e12fedb38
 Decisions: DEC-COM-001 launch prices; DEC-COM-002 Lemon Squeezy boundary; DEC-AUTH-001 secure credential storage; DEC-LAUNCH-001 individual launch
 Produced outputs: SAFE-001 through SAFE-006; AUTH-001 through AUTH-007; BILL-001 through BILL-010; DOC-001 through DOC-005; OPS-001 through OPS-006; REL-001 through REL-003; QUAL-001 through QUAL-008
 Verification evidence: Repository and live-state evidence ledger above
-Open items: OPEN-COM-001, OPEN-REL-001, and OPEN-LEGAL-001
-Acceptance checks: Preserve the out-of-scope set; trace every work item to a requirement; do not claim paid launch until all three open items close
+Open items: OPEN-COM-001, OPEN-AUTH-001, OPEN-REL-001, and OPEN-LEGAL-001
+Acceptance checks: Preserve the out-of-scope set; trace every work item to a requirement; do not claim paid launch until all four open items close
