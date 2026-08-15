@@ -4,12 +4,21 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to rebuild
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -21,13 +30,14 @@ jobs:
       - name: Check out tagged source
         uses: actions/checkout@v7
         with:
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
 
       - name: Verify tag, version, and changelog
         shell: bash
         run: |
           version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "footon") | .version')
-          test "v${version}" = "${GITHUB_REF_NAME}"
+          test "v${version}" = "${RELEASE_TAG}"
           grep -F "## [${version}] - " CHANGELOG.md
 
       - name: Install Rust 1.95
@@ -65,10 +75,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            test "$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft)" = true
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            test "$(gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft)" = true
           else
-            gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft --verify-tag --title "Footon ${GITHUB_REF_NAME}" --generate-notes
+            gh release create "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --draft --verify-tag --title "Footon ${RELEASE_TAG}" --generate-notes
           fi
 
   build:
@@ -101,6 +111,8 @@ jobs:
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install Rust 1.95
         shell: bash
@@ -115,7 +127,7 @@ jobs:
         if: matrix.archive == 'tar'
         shell: bash
         run: |
-          name="footon-${GITHUB_REF_NAME#v}-${{ matrix.target }}"
+          name="footon-${RELEASE_TAG#v}-${{ matrix.target }}"
           mkdir -p dist/package
           cp "target/${{ matrix.target }}/release/${{ matrix.executable }}" dist/package/footon
           tar -C dist/package -czf "dist/${name}.tar.gz" footon
@@ -129,7 +141,7 @@ jobs:
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $name = "footon-$($env:GITHUB_REF_NAME.TrimStart('v'))-${{ matrix.target }}"
+          $name = "footon-$($env:RELEASE_TAG.TrimStart('v'))-${{ matrix.target }}"
           New-Item -ItemType Directory -Force -Path dist/package | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.executable }}" "dist/package/footon.exe"
           Compress-Archive -Path "dist/package/footon.exe" -DestinationPath "dist/$name.zip"
@@ -140,4 +152,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release upload "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --clobber
+        run: |
+          name="footon-${RELEASE_TAG#v}-${{ matrix.target }}"
+          extension="${{ matrix.archive == 'zip' && 'zip' || 'tar.gz' }}"
+          gh release upload "${RELEASE_TAG}" "dist/${name}.${extension}" "dist/${name}.${extension}.sha256" --repo "${GITHUB_REPOSITORY}" --clobber
