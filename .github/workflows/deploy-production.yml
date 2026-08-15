@@ -79,7 +79,10 @@ jobs:
         run: npx wrangler d1 migrations apply footon --remote
 
       - name: Read back production migrations
-        run: npx wrangler d1 migrations list footon --remote > "$RUNNER_TEMP/footon-smoke/migrations-after.txt"
+        shell: bash
+        run: |
+          npx wrangler d1 migrations list footon --remote > "$RUNNER_TEMP/footon-smoke/migrations-after.txt"
+          npx wrangler d1 time-travel info footon > "$RUNNER_TEMP/footon-smoke/d1-bookmark-after.txt"
 
       - name: Deploy tagged Worker
         env:
@@ -89,11 +92,23 @@ jobs:
       - name: Record deployment and public smoke results
         shell: bash
         run: |
+          npx wrangler deployments list --json > "$RUNNER_TEMP/footon-smoke/deployments-after.json"
+          curl --fail --silent --show-error --dump-header "$RUNNER_TEMP/footon-smoke/health.headers" --output "$RUNNER_TEMP/footon-smoke/health.json" https://footon.dev/healthz
           curl --fail --silent --show-error --dump-header "$RUNNER_TEMP/footon-smoke/home-html.headers" --output "$RUNNER_TEMP/footon-smoke/home.html" https://footon.dev/
           curl --fail --silent --show-error --header 'Accept: text/markdown' --dump-header "$RUNNER_TEMP/footon-smoke/home-markdown.headers" --output "$RUNNER_TEMP/footon-smoke/home.md" https://footon.dev/
           curl --fail --silent --show-error --dump-header "$RUNNER_TEMP/footon-smoke/oauth.headers" --output "$RUNNER_TEMP/footon-smoke/oauth.json" https://footon.dev/.well-known/oauth-authorization-server
           curl --fail --silent --show-error --dump-header "$RUNNER_TEMP/footon-smoke/privacy.headers" --output "$RUNNER_TEMP/footon-smoke/privacy.html" https://footon.dev/privacy
+          curl --fail --silent --show-error --header 'Accept: text/markdown' --output "$RUNNER_TEMP/footon-smoke/privacy.md" https://footon.dev/privacy
           curl --fail --silent --show-error --dump-header "$RUNNER_TEMP/footon-smoke/terms.headers" --output "$RUNNER_TEMP/footon-smoke/terms.html" https://footon.dev/terms
+          curl --fail --silent --show-error --header 'Accept: text/markdown' --output "$RUNNER_TEMP/footon-smoke/terms.md" https://footon.dev/terms
+          curl --fail --silent --show-error --dump-header "$RUNNER_TEMP/footon-smoke/pricing.headers" --output "$RUNNER_TEMP/footon-smoke/pricing.html" https://footon.dev/pricing
+          curl --fail --silent --show-error --header 'Accept: text/markdown' --output "$RUNNER_TEMP/footon-smoke/pricing.md" https://footon.dev/pricing
+          curl --fail --silent --show-error --dump-header "$RUNNER_TEMP/footon-smoke/security.headers" --output "$RUNNER_TEMP/footon-smoke/security.html" https://footon.dev/security
+          curl --fail --silent --show-error --header 'Accept: text/markdown' --output "$RUNNER_TEMP/footon-smoke/security.md" https://footon.dev/security
+          curl --fail --silent --show-error --dump-header "$RUNNER_TEMP/footon-smoke/support.headers" --output "$RUNNER_TEMP/footon-smoke/support.html" https://footon.dev/support
+          curl --fail --silent --show-error --header 'Accept: text/markdown' --output "$RUNNER_TEMP/footon-smoke/support.md" https://footon.dev/support
+          curl --fail --silent --show-error --head --dump-header "$RUNNER_TEMP/footon-smoke/home-head.headers" --output /dev/null https://footon.dev/
+          test "$(tr -d '[:space:]' < "$RUNNER_TEMP/footon-smoke/health.json")" = '{"status":"ok"}'
 
       - name: Upload deployment evidence
         if: always()
