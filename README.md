@@ -21,14 +21,16 @@ deployment.
 
 ```sh
 cargo install --git https://github.com/douglance/footon footon
+footon signin you@example.com
 footon draft thread.jsonl --title "Public title" --output footon-draft.json
-FOOTON_TOKEN=... footon publish footon-draft.json
+footon publish footon-draft.json
 footon fetch https://footon.dev/s/example
 ```
 
-Drafting makes no network request. Publishing is a separate command and refuses
-plain HTTP except for localhost tests. See [cli/README.md](cli/README.md) for the
-full contract.
+Sign-in stores a refreshable session in the operating system credential store;
+normal command output never includes access or refresh tokens. Drafting makes no
+network request. Publishing is a separate command and refuses plain HTTP except
+for localhost tests. See [cli/README.md](cli/README.md) for the full contract.
 
 Public share URLs use HTTP content negotiation. Browsers receive the dense HTML
 reader by default. Agents can send `Accept: text/markdown`; `footon fetch` does

@@ -3,16 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "npm@11.18.0",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
+    "audit": "cargo audit --deny warnings && npm audit --audit-level=high",
     "build": "worker-build --release --out-dir build worker",
-    "check": "cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace && npm run build",
+    "check": "cargo fmt --all --check && cargo clippy --locked --workspace --all-targets --all-features -- -D warnings && cargo test --locked --workspace && npm run build",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "format": "cargo fmt --all",
     "format:check": "cargo fmt --all --check",
     "lint": "npm run lint:rust",
-    "lint:rust": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-    "test": "cargo test --workspace"
+    "lint:rust": "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+    "package:verify": "cargo package --workspace --exclude footon-worker --locked --allow-dirty",
+    "test": "cargo test --locked --workspace",
+    "verify:release": "npm run check && npm run audit && npm run package:verify"
   },
   "devDependencies": {
     "wrangler": "^4.122.0"

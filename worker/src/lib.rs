@@ -11,22 +11,31 @@ use url::Url;
 use worker::Method;
 use worker::d1::D1Type;
 use worker::email::SendEmailBuilder;
-use worker::{
-    Context, Env, Fetch, Headers, Request, RequestInit, Response, Result, ScheduledEvent,
-};
+use worker::{Context, Env, Request, Response, Result, ScheduledEvent};
 
 use topcoat::context::Cx;
 use topcoat::router::{
     Body as TopcoatBody, Method as HttpMethod, Path, RouteFn, RouteFuture, Router,
 };
 
+mod billing;
+mod billing_adapter;
 mod components;
 mod ui;
 
-use ui::authorization::{AuthorizationPage, authorization_markdown, authorize_page};
+use billing_adapter::{billing_status, checkout, lemon_squeezy_webhook, user_has_share_capacity};
+
+use ui::authorization::{
+    AuthorizationPage, VerificationPage, authorization_markdown, authorize_page,
+    verification_markdown, verification_page,
+};
+use ui::commercial::{
+    pricing_markdown, pricing_page, security_markdown, security_page, support_markdown,
+    support_page,
+};
 use ui::pages::{
-    check_email_markdown, check_email_page, connect_markdown, connect_page, home_markdown,
-    home_page, install_markdown, install_page, llms_markdown,
+    LANDING_JS, home_markdown, home_page, llms_markdown, privacy_markdown, privacy_page,
+    terms_markdown, terms_page,
 };
 use ui::response as ui_response;
 use ui::thread::{VIEWER_JS, viewer_page};
@@ -38,8 +47,32 @@ const ACCESS_TTL_SECONDS: i64 = 3_600;
 const REFRESH_TTL_SECONDS: i64 = 2_592_000;
 const CLIENT_TTL_SECONDS: i64 = 7_776_000;
 const CODE_TTL_SECONDS: i64 = 300;
-const MAGIC_TTL_SECONDS: i64 = 600;
+const EMAIL_CODE_TTL_SECONDS: i64 = 600;
+const EMAIL_CODE_RESEND_COOLDOWN_SECONDS: i64 = 60;
+const MAX_EMAIL_CODE_ATTEMPTS: i32 = 5;
+const REVOKED_SHARE_RETENTION_SECONDS: i64 = 2_592_000;
+const MCP_INITIALIZE_PROTOCOL_VERSIONS: [&str; 4] =
+    ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
 const ROBOTS: &str = "User-agent: *\nAllow: /\n";
+const PUBLIC_GET_ROUTES: [&str; 17] = [
+    "/healthz",
+    "/",
+    "/privacy",
+    "/terms",
+    "/pricing",
+    "/security",
+    "/support",
+    "/llms.txt",
+    "/robots.txt",
+    "/style.css",
+    "/viewer.js",
+    "/landing.js",
+    "/favicon.svg",
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-protected-resource/mcp",
+    "/authorize",
+    "/s/{id}",
+];
 
 #[worker::event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -88,77 +121,44 @@ async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: worker::ScheduleConte
                 let _ = stmt.run().await;
             }
         }
+        let revoked_share_cutoff = time_string(unix_now() - REVOKED_SHARE_RETENTION_SECONDS);
+        if let Ok(stmt) = db
+            .prepare("DELETE FROM shares WHERE revoked_at IS NOT NULL AND revoked_at < ?1")
+            .bind_refs(&[D1Type::Text(&revoked_share_cutoff)])
+        {
+            let _ = stmt.run().await;
+        }
     }
 }
 
 async fn handle(req: &mut Request, env: &Env) -> Result<Response> {
+    let is_head = req.method() == Method::Head;
+    let method = effective_method(req.method());
+    let response = handle_method(req, env, method).await?;
+    Ok(if is_head {
+        without_body(response)
+    } else {
+        response
+    })
+}
+
+async fn handle_method(req: &mut Request, env: &Env, method: Method) -> Result<Response> {
     let url = req.url()?;
     let path = url.path();
-    let method = req.method();
 
-    if method == Method::Get && path == "/" {
-        let accept = req.headers().get("Accept")?;
-        return ui_response::negotiated_standard(
-            accept.as_deref(),
-            home_page().await,
-            home_markdown(),
-        );
-    }
-    if method == Method::Get && path == "/install" {
-        let accept = req.headers().get("Accept")?;
-        return ui_response::negotiated_standard(
-            accept.as_deref(),
-            install_page().await,
-            install_markdown(),
-        );
-    }
-    if method == Method::Get && path == "/connect" {
-        let accept = req.headers().get("Accept")?;
-        return ui_response::negotiated_standard(
-            accept.as_deref(),
-            connect_page().await,
-            connect_markdown(),
-        );
-    }
-    if method == Method::Get && path == "/llms.txt" {
-        return ui_response::markdown(llms_markdown());
-    }
-    if method == Method::Get && path == "/robots.txt" {
-        return plain_text_response(ROBOTS);
-    }
-    if method == Method::Get && path == "/style.css" {
-        return css_response(STYLE);
-    }
-    if method == Method::Get && path == "/viewer.js" {
-        return javascript_response(VIEWER_JS);
-    }
-    if method == Method::Get && path == "/favicon.svg" {
-        return svg_response(ICON);
-    }
-    if method == Method::Get && path == "/.well-known/oauth-authorization-server" {
-        return json_response(&authorization_server_metadata());
-    }
-    if method == Method::Get && path == "/.well-known/oauth-protected-resource/mcp" {
-        return json_response(&protected_resource_metadata());
+    if method == Method::Get
+        && let Some(response) = public_get(req, env, &url, path).await?
+    {
+        return Ok(response);
     }
     if method == Method::Post && path == "/oauth/register" {
         return oauth_register(req, env).await;
     }
-    if method == Method::Get && path == "/authorize" {
-        let page = authorization_page(&url, env);
-        let markdown = authorization_markdown(&page);
-        let accept = req.headers().get("Accept")?;
-        return ui_response::negotiated_authorization(
-            accept.as_deref(),
-            authorize_page(&page).await,
-            &markdown,
-        );
-    }
     if method == Method::Post && path == "/auth/request" {
-        return auth_request(req, env, &url).await;
+        return auth_request(req, env).await;
     }
-    if method == Method::Get && path == "/auth/verify" {
-        return auth_verify(env, &url).await;
+    if method == Method::Post && path == "/auth/verify" {
+        return auth_verify(req, env).await;
     }
     if method == Method::Post && path == "/oauth/token" {
         return oauth_token(req, env).await;
@@ -166,11 +166,20 @@ async fn handle(req: &mut Request, env: &Env) -> Result<Response> {
     if method == Method::Post && path == "/oauth/revoke" {
         return oauth_revoke(req, env).await;
     }
+    if method == Method::Post && path == "/webhooks/lemon-squeezy" {
+        return lemon_squeezy_webhook(req, env).await;
+    }
+    if method == Method::Post && path.starts_with("/checkout/") {
+        return checkout(req, env, path.trim_start_matches("/checkout/")).await;
+    }
     if method == Method::Post && path == "/api/shares" {
         return api_create_share(req, env).await;
     }
     if method == Method::Get && path == "/api/shares" {
         return api_list_shares(req, env).await;
+    }
+    if method == Method::Get && path == "/api/billing" {
+        return api_billing_status(req, env).await;
     }
     if method == Method::Post
         && let Some(id) = blackout_share_id(path)
@@ -183,38 +192,117 @@ async fn handle(req: &mut Request, env: &Env) -> Result<Response> {
     if method == Method::Post && path == "/mcp" {
         return mcp(req, env).await;
     }
-    if method == Method::Get && path.starts_with("/s/") {
-        return public_share(req, env, path.trim_start_matches("/s/")).await;
-    }
-
     Response::error("not found", 404)
+}
+
+async fn public_get(
+    req: &mut Request,
+    env: &Env,
+    url: &Url,
+    path: &str,
+) -> Result<Option<Response>> {
+    let response = match path {
+        "/healthz" => healthz(env).await?,
+        "/" => {
+            let accept = req.headers().get("Accept")?;
+            ui_response::negotiated_standard(accept.as_deref(), home_page().await, home_markdown())?
+        }
+        "/privacy" => {
+            let accept = req.headers().get("Accept")?;
+            ui_response::negotiated_standard(
+                accept.as_deref(),
+                privacy_page().await,
+                privacy_markdown(),
+            )?
+        }
+        "/terms" => {
+            let accept = req.headers().get("Accept")?;
+            ui_response::negotiated_standard(
+                accept.as_deref(),
+                terms_page().await,
+                terms_markdown(),
+            )?
+        }
+        "/pricing" => {
+            let accept = req.headers().get("Accept")?;
+            ui_response::negotiated_standard(
+                accept.as_deref(),
+                pricing_page().await,
+                pricing_markdown(),
+            )?
+        }
+        "/security" => {
+            let accept = req.headers().get("Accept")?;
+            ui_response::negotiated_standard(
+                accept.as_deref(),
+                security_page().await,
+                security_markdown(),
+            )?
+        }
+        "/support" => {
+            let accept = req.headers().get("Accept")?;
+            ui_response::negotiated_standard(
+                accept.as_deref(),
+                support_page().await,
+                support_markdown(),
+            )?
+        }
+        "/llms.txt" => ui_response::markdown(llms_markdown())?,
+        "/robots.txt" => plain_text_response(ROBOTS)?,
+        "/style.css" => css_response(STYLE)?,
+        "/viewer.js" => javascript_response(VIEWER_JS)?,
+        "/landing.js" => javascript_response(LANDING_JS)?,
+        "/favicon.svg" => svg_response(ICON)?,
+        "/.well-known/oauth-authorization-server" => {
+            json_response(&authorization_server_metadata())?
+        }
+        "/.well-known/oauth-protected-resource/mcp" => {
+            json_response(&protected_resource_metadata())?
+        }
+        "/authorize" => {
+            let page = authorization_page(url);
+            let markdown = authorization_markdown(&page);
+            let accept = req.headers().get("Accept")?;
+            ui_response::negotiated_authorization(
+                accept.as_deref(),
+                authorize_page(&page).await,
+                &markdown,
+            )?
+        }
+        _ if path.starts_with("/s/") => {
+            public_share(req, env, path.trim_start_matches("/s/")).await?
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(response))
 }
 
 fn router() -> Router {
     let mut builder = Router::builder();
+    for path in PUBLIC_GET_ROUTES {
+        for method in [HttpMethod::GET, HttpMethod::HEAD] {
+            builder = builder.route(RouteFn::new(
+                method,
+                std::borrow::Cow::Owned(Path::new(path).to_owned()),
+                topcoat_match,
+            ));
+        }
+    }
     for (method, path) in [
-        (HttpMethod::GET, "/"),
-        (HttpMethod::GET, "/install"),
-        (HttpMethod::GET, "/connect"),
-        (HttpMethod::GET, "/llms.txt"),
-        (HttpMethod::GET, "/robots.txt"),
-        (HttpMethod::GET, "/style.css"),
-        (HttpMethod::GET, "/viewer.js"),
-        (HttpMethod::GET, "/favicon.svg"),
-        (HttpMethod::GET, "/.well-known/oauth-authorization-server"),
-        (HttpMethod::GET, "/.well-known/oauth-protected-resource/mcp"),
         (HttpMethod::POST, "/oauth/register"),
-        (HttpMethod::GET, "/authorize"),
         (HttpMethod::POST, "/auth/request"),
-        (HttpMethod::GET, "/auth/verify"),
+        (HttpMethod::POST, "/auth/verify"),
         (HttpMethod::POST, "/oauth/token"),
         (HttpMethod::POST, "/oauth/revoke"),
+        (HttpMethod::POST, "/webhooks/lemon-squeezy"),
+        (HttpMethod::POST, "/checkout/monthly"),
+        (HttpMethod::POST, "/checkout/annual"),
         (HttpMethod::POST, "/api/shares"),
         (HttpMethod::GET, "/api/shares"),
+        (HttpMethod::GET, "/api/billing"),
         (HttpMethod::POST, "/api/shares/{id}/blackouts"),
         (HttpMethod::DELETE, "/api/shares/{id}"),
         (HttpMethod::POST, "/mcp"),
-        (HttpMethod::GET, "/s/{id}"),
     ] {
         builder = builder.route(RouteFn::new(
             method,
@@ -223,6 +311,38 @@ fn router() -> Router {
         ));
     }
     builder.build()
+}
+
+fn effective_method(method: Method) -> Method {
+    if method == Method::Head {
+        Method::Get
+    } else {
+        method
+    }
+}
+
+fn without_body(response: Response) -> Response {
+    let (builder, _) = response.into_parts();
+    builder.empty()
+}
+
+async fn healthz(env: &Env) -> Result<Response> {
+    let healthy = match env.d1("DB") {
+        Ok(db) => db.prepare("SELECT 1").run().await.is_ok(),
+        Err(_) => false,
+    };
+    if !healthy {
+        worker::console_error!("healthz dependency check failed");
+    }
+
+    let response = json_response(&serde_json::json!({
+        "status": if healthy { "ok" } else { "unavailable" }
+    }))?;
+    Ok(if healthy {
+        response
+    } else {
+        response.with_status(503)
+    })
 }
 
 fn topcoat_match(_cx: &Cx, _body: TopcoatBody) -> RouteFuture<'_> {
@@ -272,10 +392,16 @@ struct ShareBlackoutResponse {
 
 async fn api_create_share(req: &mut Request, env: &Env) -> Result<Response> {
     let Some(user) = bearer_user(req, env).await? else {
+        log_rejection("share_create", "authentication");
         return Response::error("invalid bearer token", 401);
     };
     if !has_scope(&user, "shares:write") {
+        log_rejection("share_create", "scope");
         return Response::error("missing scope: shares:write", 403);
+    }
+    if !user_has_share_capacity(env, &user.user_id).await? {
+        log_rejection("share_create", "plan_limit");
+        return Response::error("active share limit reached; revoke a share or upgrade", 402);
     }
     let input = req.json::<ShareInput>().await?;
     let share = Share {
@@ -286,12 +412,15 @@ async fn api_create_share(req: &mut Request, env: &Env) -> Result<Response> {
         report: input.report,
     };
     if share.schema_version != footon_core::model::SCHEMA_VERSION {
+        log_rejection("share_create", "schema");
         return Response::error("new shares must use footon.share.v2", 400);
     }
     if let Err(error) = validate_share(&share) {
+        log_rejection("share_create", "validation");
         return Response::error(error.to_string(), 400);
     }
     if let Err(error) = validate_safe_share(&share) {
+        log_rejection("share_create", "safety");
         return Response::error(error.to_string(), 400);
     }
     let id = token(18);
@@ -345,20 +474,33 @@ async fn api_list_shares(req: &Request, env: &Env) -> Result<Response> {
     json_response(&rows)
 }
 
-async fn api_blackout_share(req: &mut Request, env: &Env, id: &str) -> Result<Response> {
+async fn api_billing_status(req: &Request, env: &Env) -> Result<Response> {
     let Some(user) = bearer_user(req, env).await? else {
         return Response::error("invalid bearer token", 401);
     };
+    billing_status(env, &user.user_id).await
+}
+
+async fn api_blackout_share(req: &mut Request, env: &Env, id: &str) -> Result<Response> {
+    let Some(user) = bearer_user(req, env).await? else {
+        log_rejection("share_blackout", "authentication");
+        return Response::error("invalid bearer token", 401);
+    };
     if !has_scope(&user, "shares:write") {
+        log_rejection("share_blackout", "scope");
         return Response::error("missing scope: shares:write", 403);
     }
     let input = req.json::<ShareBlackoutInput>().await?;
     let Some(response) = blackout_owned_share(env, &user.user_id, id, &input).await? else {
+        log_rejection("share_blackout", "not_found");
         return Response::error("not found", 404);
     };
     match response {
         Ok(response) => json_response(&response),
-        Err(message) => Response::error(message, 400),
+        Err(message) => {
+            log_rejection("share_blackout", "validation");
+            Response::error(message, 400)
+        }
     }
 }
 
@@ -442,9 +584,11 @@ async fn load_owned_share(env: &Env, owner_id: &str, id: &str) -> Result<Option<
 
 async fn api_revoke_share(req: &Request, env: &Env, id: &str) -> Result<Response> {
     let Some(user) = bearer_user(req, env).await? else {
+        log_rejection("share_revoke", "authentication");
         return Response::error("invalid bearer token", 401);
     };
     if !has_scope(&user, "shares:write") {
+        log_rejection("share_revoke", "scope");
         return Response::error("missing scope: shares:write", 403);
     }
     validate_share_id(id)?;
@@ -609,14 +753,25 @@ struct AuthRequest {
     code_challenge: String,
     code_challenge_method: String,
     resource: String,
-    #[serde(alias = "cf-turnstile-response")]
-    turnstile_token: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AuthRequestResponse {
     ok: bool,
+    ticket: String,
+    expires_in: i64,
+}
+
+#[derive(Deserialize)]
+struct CountRow {
+    count: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthVerifyRequest {
+    ticket: String,
+    code: String,
 }
 
 #[derive(Deserialize)]
@@ -629,6 +784,8 @@ struct MagicRow {
     state: String,
     resource: String,
     expires_at: String,
+    verification_code_hash: String,
+    attempts: i32,
 }
 
 #[derive(Deserialize)]
@@ -665,7 +822,7 @@ struct AccessTokenRow {
     revoked_at: Option<String>,
 }
 
-async fn auth_request(req: &mut Request, env: &Env, url: &Url) -> Result<Response> {
+async fn auth_request(req: &mut Request, env: &Env) -> Result<Response> {
     let body = req.text().await?;
     let content_type = req.headers().get("Content-Type")?.unwrap_or_default();
     let input = if content_type.starts_with("application/json") {
@@ -674,33 +831,55 @@ async fn auth_request(req: &mut Request, env: &Env, url: &Url) -> Result<Respons
         serde_urlencoded::from_str::<AuthRequest>(&body)?
     };
     if input.code_challenge_method != "S256" {
+        log_rejection("auth_request", "pkce_method");
         return Response::error("S256 PKCE is required", 400);
     }
-    if !verify_turnstile(env, &input.turnstile_token).await? {
-        return Response::error("Turnstile verification failed", 400);
-    }
+    let Some(email) = normalize_email(&input.email) else {
+        log_rejection("auth_request", "email");
+        return Response::error("enter a valid email address", 400);
+    };
     let client = load_client(env, &input.client_id).await?;
     if !client.redirect_uris.contains(&input.redirect_uri) {
+        log_rejection("auth_request", "redirect_uri");
         return Response::error("redirect_uri is not registered", 400);
     }
     validate_resource(&input.resource)?;
     let scope = clean_scope(input.scope.as_deref().unwrap_or("shares:read shares:write"))?;
     if !scope_is_subset(&scope, &client.scope) {
+        log_rejection("auth_request", "scope");
         return Response::error("requested scope exceeds client registration", 400);
+    }
+    let resend_cutoff = time_string(unix_now() - EMAIL_CODE_RESEND_COOLDOWN_SECONDS);
+    let recent = env
+        .d1("DB")?
+        .prepare(
+            "SELECT COUNT(*) AS count
+             FROM oauth_magic_links_v2
+             WHERE email = ?1 AND created_at >= ?2 AND consumed_at IS NULL",
+        )
+        .bind_refs(&[D1Type::Text(&email), D1Type::Text(&resend_cutoff)])?
+        .first::<CountRow>(None)
+        .await?
+        .map_or(0, |row| row.count);
+    if recent > 0 {
+        log_rejection("auth_request", "rate_limit");
+        return Response::error("a code was sent recently; try again shortly", 429);
     }
     let ticket = token(32);
     let ticket_hash = hash(&ticket);
+    let verification_code = email_code();
+    let verification_code_hash = hash(&verification_code);
     let created_at = now_string();
-    let expires_at = time_string(unix_now() + MAGIC_TTL_SECONDS);
+    let expires_at = time_string(unix_now() + EMAIL_CODE_TTL_SECONDS);
     env.d1("DB")?
         .prepare(
             "INSERT INTO oauth_magic_links_v2
-             (ticket_hash, email, client_id, redirect_uri, scope, code_challenge, state, resource, created_at, expires_at, consumed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL)",
+             (ticket_hash, email, client_id, redirect_uri, scope, code_challenge, state, resource, created_at, expires_at, consumed_at, verification_code_hash, attempts)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL, ?11, 0)",
         )
         .bind_refs(&[
             D1Type::Text(&ticket_hash),
-            D1Type::Text(&input.email),
+            D1Type::Text(&email),
             D1Type::Text(&input.client_id),
             D1Type::Text(&input.redirect_uri),
             D1Type::Text(&scope),
@@ -709,34 +888,45 @@ async fn auth_request(req: &mut Request, env: &Env, url: &Url) -> Result<Respons
             D1Type::Text(&input.resource),
             D1Type::Text(&created_at),
             D1Type::Text(&expires_at),
+            D1Type::Text(&verification_code_hash),
         ])?
         .run()
         .await?;
-    let verify_url = format!(
-        "{}/auth/verify?ticket={ticket}",
-        url.origin().ascii_serialization()
-    );
-    send_magic_link(env, &input.email, &verify_url).await?;
+    send_email_code(env, &email, &verification_code).await?;
     if content_type.starts_with("application/json") {
-        json_response(&AuthRequestResponse { ok: true })
+        json_response(&AuthRequestResponse {
+            ok: true,
+            ticket,
+            expires_in: EMAIL_CODE_TTL_SECONDS,
+        })
     } else {
         let accept = req.headers().get("Accept")?;
-        ui_response::negotiated_standard(
+        ui_response::negotiated_authorization(
             accept.as_deref(),
-            check_email_page().await,
-            check_email_markdown(),
+            verification_page(&VerificationPage { ticket }).await,
+            verification_markdown(),
         )
     }
 }
 
-async fn auth_verify(env: &Env, url: &Url) -> Result<Response> {
-    let ticket = query(url, "ticket")
-        .ok_or_else(|| worker::Error::RustError("ticket missing".to_string()))?;
-    let ticket_hash = hash(&ticket);
+async fn auth_verify(req: &mut Request, env: &Env) -> Result<Response> {
+    let body = req.text().await?;
+    let content_type = req.headers().get("Content-Type")?.unwrap_or_default();
+    let input = if content_type.starts_with("application/json") {
+        serde_json::from_str::<AuthVerifyRequest>(&body)?
+    } else {
+        serde_urlencoded::from_str::<AuthVerifyRequest>(&body)?
+    };
+    let Some(code) = normalize_email_code(&input.code) else {
+        log_rejection("auth_verify", "code");
+        return Response::error("invalid or expired code", 400);
+    };
+    let ticket_hash = hash(&input.ticket);
+    let verification_code_hash = hash(code);
     let db = env.d1("DB")?;
     let row = db
         .prepare(
-            "SELECT email, client_id, redirect_uri, scope, code_challenge, state, resource, expires_at
+            "SELECT email, client_id, redirect_uri, scope, code_challenge, state, resource, expires_at, verification_code_hash, attempts
              FROM oauth_magic_links_v2
              WHERE ticket_hash = ?1 AND consumed_at IS NULL",
         )
@@ -744,10 +934,29 @@ async fn auth_verify(env: &Env, url: &Url) -> Result<Response> {
         .first::<MagicRow>(None)
         .await?;
     let Some(row) = row else {
-        return Response::error("invalid magic link", 400);
+        log_rejection("auth_verify", "ticket");
+        return Response::error("invalid or expired code", 400);
     };
-    if parse_time(&row.expires_at).timestamp() < unix_now() {
-        return Response::error("expired magic link", 400);
+    if parse_time(&row.expires_at).timestamp() < unix_now()
+        || row.attempts >= MAX_EMAIL_CODE_ATTEMPTS
+    {
+        log_rejection("auth_verify", "expired_or_attempts");
+        return Response::error("invalid or expired code", 400);
+    }
+    if row.verification_code_hash != verification_code_hash {
+        db.prepare(
+            "UPDATE oauth_magic_links_v2
+             SET attempts = attempts + 1
+             WHERE ticket_hash = ?1 AND consumed_at IS NULL AND attempts < ?2",
+        )
+        .bind_refs(&[
+            D1Type::Text(&ticket_hash),
+            D1Type::Integer(MAX_EMAIL_CODE_ATTEMPTS),
+        ])?
+        .run()
+        .await?;
+        log_rejection("auth_verify", "code");
+        return Response::error("invalid or expired code", 400);
     }
     let code = token(32);
     let code_hash = hash(&code);
@@ -755,12 +964,22 @@ async fn auth_verify(env: &Env, url: &Url) -> Result<Response> {
     let now = now_string();
     let expires_at = time_string(unix_now() + CODE_TTL_SECONDS);
     let consumed = db
-        .prepare("UPDATE oauth_magic_links_v2 SET consumed_at = ?1 WHERE ticket_hash = ?2 AND consumed_at IS NULL")
-        .bind_refs(&[D1Type::Text(&now), D1Type::Text(&ticket_hash)])?
+        .prepare(
+            "UPDATE oauth_magic_links_v2
+             SET consumed_at = ?1
+             WHERE ticket_hash = ?2 AND verification_code_hash = ?3 AND consumed_at IS NULL AND attempts < ?4",
+        )
+        .bind_refs(&[
+            D1Type::Text(&now),
+            D1Type::Text(&ticket_hash),
+            D1Type::Text(&verification_code_hash),
+            D1Type::Integer(MAX_EMAIL_CODE_ATTEMPTS),
+        ])?
         .run()
         .await?;
     if consumed.meta()?.and_then(|meta| meta.changes) != Some(1) {
-        return Response::error("invalid magic link", 400);
+        log_rejection("auth_verify", "replay");
+        return Response::error("invalid or expired code", 400);
     }
     db.prepare(
         "INSERT INTO oauth_codes_v2
@@ -786,7 +1005,7 @@ async fn auth_verify(env: &Env, url: &Url) -> Result<Response> {
     if !row.state.is_empty() {
         redirect.query_pairs_mut().append_pair("state", &row.state);
     }
-    Response::redirect_with_status(redirect, 302)
+    redirect_response(&redirect)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1086,23 +1305,21 @@ async fn mcp(req: &mut Request, env: &Env) -> Result<Response> {
             "error": { "code": -32600, "message": "invalid request" }
         }));
     }
+    if is_mcp_notification(&request) {
+        return accepted_response();
+    }
     let result = match request.method.as_str() {
         "initialize" => serde_json::json!({
-            "protocolVersion": "2026-07-28",
+            "protocolVersion": mcp_protocol_version(request.params.as_ref()),
             "serverInfo": { "name": "footon", "version": env!("CARGO_PKG_VERSION") },
             "capabilities": { "tools": {} }
         }),
         "ping" => serde_json::json!({}),
         "tools/list" => serde_json::json!({
-            "tools": [
-                { "name": "share_create", "description": "Publish one approved sanitized share" },
-                { "name": "share_list", "description": "List your active Footon shares" },
-                { "name": "share_blackout", "description": "Black out one exact substring in an owner-controlled live share" },
-                { "name": "share_revoke", "description": "Revoke one Footon share" }
-            ]
+            "tools": mcp_tools()
         }),
         "tools/call" => match call_tool(env, &user, request.params).await {
-            Ok(result) => result,
+            Ok(result) => mcp_tool_result(&result),
             Err(error) => {
                 return json_response(&serde_json::json!({
                     "jsonrpc": "2.0",
@@ -1120,6 +1337,74 @@ async fn mcp(req: &mut Request, env: &Env) -> Result<Response> {
         }
     };
     json_response(&serde_json::json!({ "jsonrpc": "2.0", "id": request.id, "result": result }))
+}
+
+fn is_mcp_notification(request: &RpcRequest) -> bool {
+    request.id.is_none()
+}
+
+fn mcp_protocol_version(params: Option<&serde_json::Value>) -> &str {
+    params
+        .and_then(|value| value.get("protocolVersion"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|version| MCP_INITIALIZE_PROTOCOL_VERSIONS.contains(version))
+        .unwrap_or("2025-11-25")
+}
+
+fn mcp_tools() -> serde_json::Value {
+    serde_json::json!([
+        {
+            "name": "share_create",
+            "description": "Publish one approved sanitized share",
+            "inputSchema": {
+                "type": "object",
+                "required": ["schemaVersion", "title", "messages", "approval"],
+                "properties": {
+                    "schemaVersion": { "type": "string", "const": "footon.share.v2" },
+                    "title": { "type": "string" },
+                    "messages": { "type": "array", "items": { "type": "object" } },
+                    "approval": { "type": "object" }
+                }
+            }
+        },
+        {
+            "name": "share_list",
+            "description": "List your active Footon shares",
+            "inputSchema": { "type": "object", "additionalProperties": false }
+        },
+        {
+            "name": "share_blackout",
+            "description": "Black out one exact substring in an owner-controlled live share",
+            "inputSchema": {
+                "type": "object",
+                "required": ["id", "message", "text"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "message": { "type": "integer", "minimum": 0 },
+                    "text": { "type": "string", "minLength": 1 }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "share_revoke",
+            "description": "Revoke one Footon share",
+            "inputSchema": {
+                "type": "object",
+                "required": ["id"],
+                "properties": { "id": { "type": "string" } },
+                "additionalProperties": false
+            }
+        }
+    ])
+}
+
+fn mcp_tool_result(value: &serde_json::Value) -> serde_json::Value {
+    let text = serde_json::to_string(&value).unwrap_or_else(|_| "null".to_string());
+    serde_json::json!({
+        "content": [{ "type": "text", "text": text }],
+        "structuredContent": value
+    })
 }
 
 async fn call_tool(
@@ -1181,6 +1466,11 @@ async fn call_tool(
         }
         "share_create" => {
             require_scope(user, "shares:write")?;
+            if !user_has_share_capacity(env, &user.user_id).await? {
+                return Err(worker::Error::RustError(
+                    "active share limit reached; revoke a share or upgrade".to_string(),
+                ));
+            }
             let share = serde_json::from_value::<Share>(args)?;
             if share.schema_version != footon_core::model::SCHEMA_VERSION {
                 return Err(worker::Error::RustError(
@@ -1210,7 +1500,7 @@ async fn call_tool(
     }
 }
 
-fn authorization_page(url: &Url, env: &Env) -> AuthorizationPage {
+fn authorization_page(url: &Url) -> AuthorizationPage {
     AuthorizationPage {
         client_id: query(url, "client_id").unwrap_or_default(),
         redirect_uri: query(url, "redirect_uri").unwrap_or_default(),
@@ -1218,10 +1508,6 @@ fn authorization_page(url: &Url, env: &Env) -> AuthorizationPage {
         state: query(url, "state").unwrap_or_default(),
         code_challenge: query(url, "code_challenge").unwrap_or_default(),
         resource: query(url, "resource").unwrap_or_else(|| format!("{ORIGIN}/mcp")),
-        turnstile_site_key: env
-            .var("TURNSTILE_SITE_KEY")
-            .ok()
-            .map(|key| key.to_string()),
     }
 }
 
@@ -1331,39 +1617,47 @@ fn query(url: &Url, name: &str) -> Option<String> {
         .find_map(|(key, value)| (key == name).then(|| value.into_owned()))
 }
 
-async fn send_magic_link(env: &Env, email: &str, verify_url: &str) -> Result<()> {
+async fn send_email_code(env: &Env, email: &str, code: &str) -> Result<()> {
     let binding = env.send_email("EMAIL")?;
-    let message = SendEmailBuilder::builder("login@footon.dev", email, "Footon sign-in link")
-        .text(&format!("Open this Footon sign-in link:\n\n{verify_url}\n"))
+    let message = SendEmailBuilder::builder("login@footon.dev", email, "Your Footon code")
+        .text(&format!(
+            "Your Footon sign-in code is:\n\n{code}\n\nIt expires in 10 minutes and can be used once.\n"
+        ))
         .build();
     binding.send_with_builder(&message).await?;
     Ok(())
 }
 
-#[derive(Deserialize)]
-struct TurnstileResponse {
-    success: bool,
-}
-
-async fn verify_turnstile(env: &Env, token: &str) -> Result<bool> {
-    if token.trim().is_empty() {
-        return Ok(false);
+fn normalize_email(value: &str) -> Option<String> {
+    let email = value.trim().to_lowercase();
+    if email.is_empty() || email.len() > 254 || email.chars().any(char::is_whitespace) {
+        return None;
     }
-    let secret = env.secret("TURNSTILE_SECRET")?.to_string();
-    let body = serde_urlencoded::to_string([("secret", secret.as_str()), ("response", token)])
-        .map_err(|error| worker::Error::RustError(error.to_string()))?;
-    let headers = Headers::new();
-    headers.set("Content-Type", "application/x-www-form-urlencoded")?;
-    let mut init = RequestInit::new();
-    init.with_method(Method::Post)
-        .with_headers(headers)
-        .with_body(Some(wasm_bindgen::JsValue::from_str(&body)));
-    let request = Request::new_with_init(
-        "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-        &init,
-    )?;
-    let mut response = Fetch::Request(request).send().await?;
-    Ok(response.json::<TurnstileResponse>().await?.success)
+    let (local, domain) = email.split_once('@')?;
+    if local.is_empty()
+        || local.len() > 64
+        || domain.is_empty()
+        || domain.contains('@')
+        || !domain.contains('.')
+    {
+        return None;
+    }
+    let valid_domain = domain.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            && label
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+            && label
+                .as_bytes()
+                .last()
+                .is_some_and(u8::is_ascii_alphanumeric)
+    });
+    valid_domain.then_some(email)
 }
 
 fn json_response<T: Serialize>(value: &T) -> Result<Response> {
@@ -1373,6 +1667,16 @@ fn json_response<T: Serialize>(value: &T) -> Result<Response> {
 fn json_response_with_status<T: Serialize>(value: &T, status: u16) -> Result<Response> {
     let mut response = Response::from_json(value)?.with_status(status);
     security_headers(&mut response)?;
+    Ok(response)
+}
+
+fn accepted_response() -> Result<Response> {
+    Ok(Response::empty()?.with_status(202))
+}
+
+fn redirect_response(location: &Url) -> Result<Response> {
+    let mut response = Response::empty()?.with_status(302);
+    response.headers_mut().set("Location", location.as_str())?;
     Ok(response)
 }
 
@@ -1427,8 +1731,12 @@ fn svg_response(svg: &str) -> Result<Response> {
     Ok(response)
 }
 
-fn internal_error(error: &worker::Error) -> Result<Response> {
-    worker::console_error!("request failed: {error}");
+fn log_rejection(operation: &str, reason: &str) {
+    worker::console_error!("operation={operation} result=rejected reason={reason}");
+}
+
+fn internal_error(_error: &worker::Error) -> Result<Response> {
+    worker::console_error!("operation=request result=unavailable reason=internal");
     let mut response = Response::error("internal server error", 500)?;
     security_headers(&mut response)?;
     Ok(response)
@@ -1451,6 +1759,24 @@ fn token(bytes: usize) -> String {
     let mut raw = vec![0_u8; bytes];
     getrandom::fill(&mut raw).expect("secure random source");
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
+}
+
+fn email_code() -> String {
+    const CODE_SPACE: u32 = 1_000_000;
+    const UNBIASED_LIMIT: u32 = u32::MAX - (u32::MAX % CODE_SPACE);
+    loop {
+        let mut raw = [0_u8; 4];
+        getrandom::fill(&mut raw).expect("secure random source");
+        let value = u32::from_le_bytes(raw);
+        if value < UNBIASED_LIMIT {
+            return format!("{:06}", value % CODE_SPACE);
+        }
+    }
+}
+
+fn normalize_email_code(value: &str) -> Option<&str> {
+    let value = value.trim();
+    (value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_digit())).then_some(value)
 }
 
 fn hash(value: &str) -> String {
@@ -1517,6 +1843,33 @@ mod tests {
             http::Request::post("https://footon.dev/api/shares/abcdefghijklmnopqrst/blackouts")
                 .body(TopcoatBody::empty())
                 .expect("request");
+        let verify_code = http::Request::post("https://footon.dev/auth/verify")
+            .body(TopcoatBody::empty())
+            .expect("request");
+        let verify_link = http::Request::get("https://footon.dev/auth/verify?ticket=private")
+            .body(TopcoatBody::empty())
+            .expect("request");
+        let billing_webhook = http::Request::post("https://footon.dev/webhooks/lemon-squeezy")
+            .body(TopcoatBody::empty())
+            .expect("request");
+        let billing_webhook_get = http::Request::get("https://footon.dev/webhooks/lemon-squeezy")
+            .body(TopcoatBody::empty())
+            .expect("request");
+        let checkout_monthly = http::Request::post("https://footon.dev/checkout/monthly")
+            .body(TopcoatBody::empty())
+            .expect("request");
+        let checkout_annual = http::Request::post("https://footon.dev/checkout/annual")
+            .body(TopcoatBody::empty())
+            .expect("request");
+        let checkout_get = http::Request::get("https://footon.dev/checkout/monthly")
+            .body(TopcoatBody::empty())
+            .expect("request");
+        let billing_status = http::Request::get("https://footon.dev/api/billing")
+            .body(TopcoatBody::empty())
+            .expect("request");
+        let billing_status_post = http::Request::post("https://footon.dev/api/billing")
+            .body(TopcoatBody::empty())
+            .expect("request");
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("runtime");
@@ -1534,8 +1887,147 @@ mod tests {
             http::StatusCode::NO_CONTENT
         );
         assert_eq!(
+            runtime.block_on(router().handle(verify_code)).status(),
+            http::StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            runtime.block_on(router().handle(billing_webhook)).status(),
+            http::StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            runtime
+                .block_on(router().handle(billing_webhook_get))
+                .status(),
+            http::StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert_eq!(
+            runtime.block_on(router().handle(checkout_monthly)).status(),
+            http::StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            runtime.block_on(router().handle(checkout_annual)).status(),
+            http::StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            runtime.block_on(router().handle(checkout_get)).status(),
+            http::StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert_eq!(
+            runtime.block_on(router().handle(billing_status)).status(),
+            http::StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            runtime
+                .block_on(router().handle(billing_status_post))
+                .status(),
+            http::StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert_eq!(
+            runtime.block_on(router().handle(verify_link)).status(),
+            http::StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert_eq!(
             runtime.block_on(router().handle(rejected)).status(),
             http::StatusCode::METHOD_NOT_ALLOWED
+        );
+    }
+
+    #[test]
+    fn topcoat_router_accepts_health_and_head_for_every_public_get() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime");
+
+        for path in [
+            "/healthz",
+            "/",
+            "/privacy",
+            "/terms",
+            "/pricing",
+            "/security",
+            "/support",
+            "/llms.txt",
+            "/robots.txt",
+            "/style.css",
+            "/viewer.js",
+            "/landing.js",
+            "/favicon.svg",
+            "/.well-known/oauth-authorization-server",
+            "/.well-known/oauth-protected-resource/mcp",
+            "/authorize",
+            "/s/abcdefghijklmnopqrst",
+        ] {
+            let head = http::Request::head(format!("https://footon.dev{path}"))
+                .body(TopcoatBody::empty())
+                .expect("request");
+            assert_eq!(
+                runtime.block_on(router().handle(head)).status(),
+                http::StatusCode::NO_CONTENT,
+                "HEAD {path}"
+            );
+        }
+
+        let health_get = http::Request::get("https://footon.dev/healthz")
+            .body(TopcoatBody::empty())
+            .expect("request");
+        assert_eq!(
+            runtime.block_on(router().handle(health_get)).status(),
+            http::StatusCode::NO_CONTENT
+        );
+
+        let health_post = http::Request::post("https://footon.dev/healthz")
+            .body(TopcoatBody::empty())
+            .expect("request");
+        assert_eq!(
+            runtime.block_on(router().handle(health_post)).status(),
+            http::StatusCode::METHOD_NOT_ALLOWED
+        );
+    }
+
+    #[test]
+    fn head_uses_get_semantics() {
+        assert_eq!(effective_method(Method::Head), Method::Get);
+        assert_eq!(effective_method(Method::Post), Method::Post);
+    }
+
+    #[test]
+    fn active_share_capacity_rejects_exactly_at_the_plan_limit() {
+        assert!(billing_adapter::has_share_capacity(0, 3));
+        assert!(billing_adapter::has_share_capacity(2, 3));
+        assert!(!billing_adapter::has_share_capacity(3, 3));
+        assert!(!billing_adapter::has_share_capacity(101, 100));
+    }
+
+    #[test]
+    fn checkout_url_is_bounded_and_associates_the_normalized_buyer() {
+        let url = billing_adapter::build_checkout_url(
+            "https://footon.lemonsqueezy.com/checkout/buy/monthly?discount=launch",
+            " Buyer@Example.COM ",
+        )
+        .expect("checkout URL");
+        let pairs = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(pairs.get("discount").map(AsRef::as_ref), Some("launch"));
+        assert_eq!(
+            pairs.get("checkout[email]").map(AsRef::as_ref),
+            Some("buyer@example.com")
+        );
+        assert_eq!(
+            pairs.get("checkout[custom][email]").map(AsRef::as_ref),
+            Some("buyer@example.com")
+        );
+        assert_eq!(
+            pairs.get("checkout[custom][user_id]").map(AsRef::as_ref),
+            Some("email:buyer@example.com")
+        );
+        assert!(
+            billing_adapter::build_checkout_url(
+                "https://attacker.example/checkout/buy/monthly",
+                "buyer@example.com"
+            )
+            .is_err()
         );
     }
 
@@ -1565,6 +2057,89 @@ mod tests {
         assert!(validate_redirect_uri("https://agent.example/callback#fragment").is_err());
     }
 
+    #[test]
+    fn email_codes_are_six_digits_and_stored_as_hashes() {
+        for _ in 0..100 {
+            let code = email_code();
+            assert_eq!(code.len(), 6);
+            assert!(code.bytes().all(|byte| byte.is_ascii_digit()));
+        }
+        assert_eq!(normalize_email_code(" 123456 "), Some("123456"));
+        assert_eq!(normalize_email_code("12345"), None);
+        assert_eq!(normalize_email_code("12345x"), None);
+
+        let migration = include_str!("../../migrations/0004_email_codes.sql");
+        assert!(migration.contains("verification_code_hash"));
+        assert!(migration.contains("attempts"));
+        assert!(!migration.contains("verification_code TEXT"));
+    }
+
+    #[test]
+    fn email_addresses_are_normalized_before_throttling_and_delivery() {
+        assert_eq!(
+            normalize_email(" Test.User@Example.com "),
+            Some("test.user@example.com".to_string())
+        );
+        assert_eq!(normalize_email("missing-at.example.com"), None);
+        assert_eq!(normalize_email("two@@example.com"), None);
+        assert_eq!(normalize_email("person@example"), None);
+        assert_eq!(normalize_email("person@-example.com"), None);
+        assert_eq!(
+            normalize_email(&format!("{}@example.com", "a".repeat(65))),
+            None
+        );
+    }
+
+    #[test]
+    fn oauth_redirect_uses_a_mutable_worker_response() {
+        let source = include_str!("lib.rs");
+        let start = source
+            .find("fn redirect_response")
+            .expect("redirect helper");
+        let end = source[start..]
+            .find("fn css_response")
+            .map(|offset| start + offset)
+            .expect("next helper");
+        let implementation = &source[start..end];
+        let immutable_helper = ["Response::", "redirect_with_status"].concat();
+
+        assert!(!implementation.contains(&immutable_helper));
+        assert!(implementation.contains("Response::empty()?.with_status(302)"));
+        assert!(implementation.contains("response.headers_mut().set(\"Location\""));
+    }
+
+    #[test]
+    fn mcp_lifecycle_and_tool_contracts_match_streamable_http() {
+        let initialized = serde_json::from_value::<RpcRequest>(serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        }))
+        .expect("initialized notification");
+        assert!(is_mcp_notification(&initialized));
+
+        assert_eq!(
+            mcp_protocol_version(Some(&serde_json::json!({
+                "protocolVersion": "2025-06-18"
+            }))),
+            "2025-06-18"
+        );
+        assert_eq!(
+            mcp_protocol_version(Some(&serde_json::json!({
+                "protocolVersion": "2026-07-28"
+            }))),
+            "2025-11-25"
+        );
+
+        let tools = mcp_tools();
+        let tools = tools.as_array().expect("tool list");
+        assert_eq!(tools.len(), 4);
+        assert!(tools.iter().all(|tool| tool.get("inputSchema").is_some()));
+
+        let result = mcp_tool_result(&serde_json::json!({ "ok": true }));
+        assert_eq!(result["content"][0]["type"], "text");
+        assert_eq!(result["structuredContent"]["ok"], true);
+    }
+
     #[tokio::test]
     async fn home_page_explains_and_installs_prompt_chain_sharing() {
         let html = home_page().await.expect("home page").render(&Cx::default());
@@ -1582,7 +2157,7 @@ mod tests {
                 .expect("heading")
                 .text()
                 .collect::<String>(),
-            "Share the thread. Keep the secrets."
+            "Share the thread. Keep your secrets."
         );
         assert!(page_text.contains("You keep the raw transcript local"));
         assert!(page_text.contains("publishes only the safe copy you approve"));
@@ -1613,7 +2188,7 @@ mod tests {
         assert_eq!(
             document
                 .select(&selector(
-                    "script[src=\"/viewer.js?v=20260814-live-demo-1\"]",
+                    "script[src=\"/viewer.js?v=20260815-commercial-a11y-2\"]",
                 ))
                 .count(),
             1
@@ -1648,24 +2223,135 @@ mod tests {
                 .iter()
                 .any(|command| command.contains("footon blackout-share https://footon.dev/s/..."))
         );
-        assert!(page_text.contains("Incurs Code Mode"));
-        assert!(page_text.contains("https://footon.dev/mcp"));
+        for removed in [
+            "FOR AGENTS",
+            "FOOTON / SAFE AGENT HANDOFFS",
+            "LOCAL RAW · SERVER RESCAN · MARKDOWN NATIVE",
+            "Connect MCP",
+            "Install details",
+        ] {
+            assert!(!page_text.contains(removed), "still contains {removed}");
+        }
+        assert_eq!(document.select(&selector("a[href='/privacy']")).count(), 1);
+        assert_eq!(document.select(&selector("a[href='/terms']")).count(), 1);
         assert_eq!(
             document
                 .select(&selector("link[rel=stylesheet]"))
                 .next()
                 .and_then(|node| node.value().attr("href")),
-            Some("/style.css?v=20260814-live-demo-1")
+            Some("/style.css?v=20260815-commercial-a11y-2")
         );
+    }
+
+    #[tokio::test]
+    async fn home_page_has_a_copyable_agent_install_prompt() {
+        let html = home_page().await.expect("home page").render(&Cx::default());
+        let document = Html::parse_document(&html);
+        let prompt = document
+            .select(&selector("#install-agent-prompt"))
+            .next()
+            .expect("agent prompt");
+        let button = document
+            .select(&selector("button[data-copy-target]"))
+            .next()
+            .expect("copy button");
+
+        assert!(
+            prompt
+                .text()
+                .collect::<String>()
+                .contains("Install Footon for this workspace")
+        );
+        assert_eq!(
+            button.value().attr("data-copy-target"),
+            Some("install-agent-prompt")
+        );
+        assert_eq!(button.text().collect::<String>(), "COPY PROMPT");
+        assert_eq!(
+            document
+                .select(&selector(
+                    "script[src='/landing.js?v=20260815-commercial-a11y-2']",
+                ))
+                .count(),
+            1
+        );
+        for contract in [
+            "navigator.clipboard",
+            "data-copy-target",
+            "COPIED",
+            "COPY FAILED",
+        ] {
+            assert!(LANDING_JS.contains(contract), "missing {contract}");
+        }
+    }
+
+    #[tokio::test]
+    async fn home_page_includes_complete_mcp_connection_details() {
+        let html = home_page().await.expect("home page").render(&Cx::default());
+        let document = Html::parse_document(&html);
+        let page_text = document.root_element().text().collect::<String>();
+
+        for detail in [
+            "https://footon.dev/mcp",
+            "Authorization code + PKCE S256",
+            "shares:read shares:write",
+        ] {
+            assert!(page_text.contains(detail), "missing {detail}");
+        }
+    }
+
+    #[tokio::test]
+    async fn public_copy_does_not_expose_internal_implementation_details() {
+        let rendered_pages = [
+            home_page().await.expect("home page").render(&Cx::default()),
+            privacy_page()
+                .await
+                .expect("privacy page")
+                .render(&Cx::default()),
+            terms_page()
+                .await
+                .expect("terms page")
+                .render(&Cx::default()),
+        ]
+        .join("\n");
+        let public_copy = format!(
+            "{rendered_pages}\n{}\n{}\n{}\n{}\n{}",
+            home_markdown(),
+            privacy_markdown(),
+            terms_markdown(),
+            verification_markdown(),
+            llms_markdown(),
+        );
+
+        for internal_detail in [
+            "Incurs",
+            "Code Mode",
+            "typed commands",
+            "server-side",
+            "before storage",
+            "Worker version",
+            "workers-rs",
+            "Topcoat",
+            "Turnstile",
+            "database record",
+            "hashed authentication records",
+        ] {
+            assert!(
+                !public_copy.contains(internal_detail),
+                "public copy exposes {internal_detail}"
+            );
+        }
+        assert!(privacy_markdown().contains("Cloudflare"));
+        assert!(privacy_markdown().contains("Lemon Squeezy"));
     }
 
     #[test]
     fn every_browser_page_has_an_agent_first_markdown_version() {
         let pages = [
             home_markdown(),
-            install_markdown(),
-            connect_markdown(),
-            check_email_markdown(),
+            privacy_markdown(),
+            terms_markdown(),
+            verification_markdown(),
         ];
 
         for markdown in pages {
@@ -1683,7 +2369,6 @@ mod tests {
             state: "private-state".to_string(),
             code_challenge: "private-challenge".to_string(),
             resource: "https://footon.dev/mcp".to_string(),
-            turnstile_site_key: None,
         });
         assert!(authorization.contains("shares:read shares:write"));
         assert!(authorization.contains("https://footon.dev/mcp"));
@@ -1710,7 +2395,6 @@ mod tests {
             state: "state&value".to_string(),
             code_challenge: "challenge".to_string(),
             resource: "https://footon.dev/mcp".to_string(),
-            turnstile_site_key: Some("site-key".to_string()),
         })
         .await
         .expect("authorization page")
@@ -1735,21 +2419,73 @@ mod tests {
                 1
             );
         }
-        assert_eq!(
-            form.select(&selector(".cf-turnstile"))
+        assert_eq!(form.select(&selector(".cf-turnstile")).count(), 0);
+        assert_eq!(form.select(&selector("script")).count(), 0);
+        assert!(
+            form.select(&selector("#email"))
                 .next()
-                .and_then(|node| node.value().attr("data-sitekey")),
-            Some("site-key")
-        );
-        assert_eq!(
-            form.select(&selector("script"))
-                .next()
-                .and_then(|node| node.value().attr("src")),
-            Some("https://challenges.cloudflare.com/turnstile/v0/api.js")
+                .and_then(|node| node.value().attr("class"))
+                .is_some_and(|classes| classes
+                    .split_whitespace()
+                    .any(|class| class == "authorization-input"))
         );
         assert!(html.contains("client&quot; autofocus=&quot;true"));
         assert!(html.contains("state&amp;value"));
         assert!(!html.contains("value=\"client\" autofocus=\"true\""));
+    }
+
+    #[tokio::test]
+    async fn authorization_flow_uses_an_email_code_the_agent_can_submit() {
+        let authorize_html = authorize_page(&AuthorizationPage {
+            client_id: "client".to_string(),
+            redirect_uri: "https://agent.example/callback".to_string(),
+            scope: "shares:read shares:write".to_string(),
+            state: "state".to_string(),
+            code_challenge: "challenge".to_string(),
+            resource: "https://footon.dev/mcp".to_string(),
+        })
+        .await
+        .expect("authorization page")
+        .render(&Cx::default());
+        let authorize_document = Html::parse_document(&authorize_html);
+        assert_eq!(
+            authorize_document
+                .select(&selector("button[type='submit']"))
+                .next()
+                .expect("submit button")
+                .text()
+                .collect::<String>(),
+            "Send code"
+        );
+
+        let verify_html =
+            ui::authorization::verification_page(&ui::authorization::VerificationPage {
+                ticket: "private-ticket".to_string(),
+            })
+            .await
+            .expect("verification page")
+            .render(&Cx::default());
+        let verify_document = Html::parse_document(&verify_html);
+        let form = verify_document
+            .select(&selector("form"))
+            .next()
+            .expect("verification form");
+        assert_eq!(form.value().attr("method"), Some("post"));
+        assert_eq!(form.value().attr("action"), Some("/auth/verify"));
+        let code = form
+            .select(&selector("input[name='code']"))
+            .next()
+            .expect("code input");
+        assert_eq!(code.value().attr("autocomplete"), Some("one-time-code"));
+        assert_eq!(code.value().attr("inputmode"), Some("numeric"));
+        assert_eq!(code.value().attr("pattern"), Some("[0-9]{6}"));
+        assert_eq!(code.value().attr("maxlength"), Some("6"));
+        assert_eq!(
+            form.select(&selector("input[name='ticket']"))
+                .next()
+                .and_then(|input| input.value().attr("value")),
+            Some("private-ticket")
+        );
     }
 
     fn assert_viewer_shell(document: &Html) {
@@ -1767,18 +2503,41 @@ mod tests {
                 .select(&selector("link[rel=stylesheet]"))
                 .next()
                 .and_then(|node| node.value().attr("href")),
-            Some("/style.css?v=20260814-live-demo-1")
+            Some("/style.css?v=20260815-commercial-a11y-2")
         );
         assert_eq!(
             document
                 .select(&selector("script[src]"))
                 .next()
                 .and_then(|node| node.value().attr("src")),
-            Some("/viewer.js?v=20260814-live-demo-1")
+            Some("/viewer.js?v=20260815-commercial-a11y-2")
         );
     }
 
     fn assert_viewer_controls(document: &Html) {
+        let role_filters = document
+            .select(&selector(".role-filters"))
+            .next()
+            .expect("message filter group");
+        assert_eq!(role_filters.value().attr("role"), Some("group"));
+        assert_eq!(
+            role_filters.value().attr("aria-label"),
+            Some("Message filters")
+        );
+        let thread_heading = document
+            .select(&selector("#thread-messages-heading"))
+            .next()
+            .expect("thread messages heading");
+        assert_eq!(thread_heading.value().name(), "h2");
+        let thread = document
+            .select(&selector("#thread-messages"))
+            .next()
+            .expect("thread messages region");
+        assert_eq!(thread.value().attr("role"), Some("region"));
+        assert_eq!(
+            thread.value().attr("aria-labelledby"),
+            Some("thread-messages-heading")
+        );
         for id in ["filter-user", "filter-agent", "filter-tools"] {
             assert_eq!(document.select(&selector(&format!("#{id}"))).count(), 1);
         }
@@ -1852,7 +2611,9 @@ mod tests {
             "width: 6px;",
             "touch-action: none;",
             ".message:hover, .message:focus-within",
-            ".thread-view-toggle:checked ~ .meta .view-control",
+            ".viewer:has(.thread-view-toggle:checked)",
+            ".authorization-input",
+            ".visually-hidden",
         ] {
             assert!(theme.contains(contract));
         }
@@ -1868,6 +2629,9 @@ mod tests {
             "pointermove",
             "pointerup",
             "pointercancel",
+            "keydown",
+            "PageDown",
+            "aria-valuenow",
             "viewer.dataset.threadScroll",
             "scrollTarget.addEventListener(\"scroll\"",
             "addEventListener(\"load\", layout",

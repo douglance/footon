@@ -1,0 +1,38 @@
+name: Publish accepted release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Accepted draft release tag, such as v0.1.0
+        required: true
+        type: string
+      deployment_id:
+        description: Accepted production Worker deployment ID
+        required: true
+        type: string
+      smoke_report_url:
+        description: URL of the accepted production smoke evidence
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish reviewed draft
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - name: Verify and publish accepted draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          test "$(gh release view "${{ inputs.tag }}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft)" = true
+          test -n "${{ inputs.deployment_id }}"
+          case "${{ inputs.smoke_report_url }}" in https://*) ;; *) exit 1 ;; esac
+          gh release view "${{ inputs.tag }}" --repo "${GITHUB_REPOSITORY}" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
+          printf '\n## Production acceptance\n\n- Worker deployment: `%s`\n- Smoke evidence: %s\n' "${{ inputs.deployment_id }}" "${{ inputs.smoke_report_url }}" >> "$RUNNER_TEMP/release-notes.md"
+          gh release edit "${{ inputs.tag }}" --repo "${GITHUB_REPOSITORY}" --notes-file "$RUNNER_TEMP/release-notes.md" --draft=false --latest

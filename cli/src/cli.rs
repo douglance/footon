@@ -11,6 +11,8 @@ use crate::error::Error;
 use crate::fetch;
 use crate::parse::Source;
 use crate::publish::{self, PublishResponse};
+use crate::session::{self, KeyringStore, SignoutResponse};
+use crate::signin::{self, SigninResponse};
 
 #[derive(Deserialize, incurs::Args)]
 struct DraftArgs {
@@ -40,6 +42,26 @@ struct PublishArgs {
 struct FetchArgs {
     /// HTTPS Footon share URL. Loopback HTTP is accepted for tests.
     url: String,
+}
+
+#[derive(Deserialize, incurs::Args)]
+struct SigninArgs {
+    /// Email address that receives the one-time Footon code.
+    email: String,
+}
+
+#[derive(Deserialize, incurs::Options)]
+struct SigninOptions {
+    /// Footon OAuth origin. Loopback HTTP is accepted for tests.
+    #[incurs(default = "https://footon.dev")]
+    origin: String,
+}
+
+#[derive(Deserialize, incurs::Options)]
+struct SignoutOptions {
+    /// Footon OAuth origin. Loopback HTTP is accepted for tests.
+    #[incurs(default = "https://footon.dev")]
+    origin: String,
 }
 
 #[derive(Deserialize, incurs::Args)]
@@ -76,24 +98,64 @@ struct PublishOptions {
     endpoint: String,
 }
 
-#[derive(Deserialize, incurs::Env)]
-struct PublishEnv {
-    /// Magic-link session bearer token. Never stored in a draft.
-    #[incurs(env = "FOOTON_TOKEN")]
-    footon_token: String,
-}
-
 /// Build Footon's typed incurs command graph.
 #[must_use]
 pub fn app() -> Cli {
     Cli::create("footon")
         .version(env!("CARGO_PKG_VERSION"))
         .description("Sanitize agent threads locally, then publish only an approved safe draft")
+        .command("signin", signin_command())
+        .command("signout", signout_command())
         .command("draft", draft_command())
         .command("blackout", blackout_command())
         .command("blackout-share", blackout_share_command())
         .command("publish", publish_command())
         .command("fetch", fetch_command())
+}
+
+fn signin_command() -> CommandDef {
+    CommandDef::typed::<SigninArgs, SigninOptions, (), SigninResponse, _, _>(
+        "signin",
+        |context| async move {
+            let pending = match signin::begin(&context.options.origin, &context.args.email).await {
+                Ok(pending) => pending,
+                Err(error) => return typed_error(&error),
+            };
+            let code = {
+                let stdin = std::io::stdin();
+                let stderr = std::io::stderr();
+                match signin::read_code(&mut stdin.lock(), &mut stderr.lock(), &context.args.email)
+                {
+                    Ok(code) => code,
+                    Err(error) => return typed_error(&error),
+                }
+            };
+            match pending.complete(&code).await {
+                Ok(completed) => match completed.save(&KeyringStore) {
+                    Ok(output) => TypedResult::ok(output),
+                    Err(error) => typed_error(&error),
+                },
+                Err(error) => typed_error(&error),
+            }
+        },
+    )
+    .description("Sign in from the terminal with an emailed six-digit code")
+    .done()
+}
+
+fn signout_command() -> CommandDef {
+    CommandDef::typed::<(), SignoutOptions, (), SignoutResponse, _, _>(
+        "signout",
+        |context| async move {
+            match session::sign_out(&context.options.origin, &KeyringStore).await {
+                Ok(output) => TypedResult::ok(output),
+                Err(error) => typed_error(&error),
+            }
+        },
+    )
+    .description("Revoke the current Footon session and remove it from secure storage")
+    .mcp(mutation_options(true))
+    .done()
 }
 
 fn blackout_command() -> CommandDef {
@@ -116,27 +178,34 @@ fn blackout_command() -> CommandDef {
 }
 
 fn blackout_share_command() -> CommandDef {
-    CommandDef::typed::<
-        BlackoutShareArgs,
-        BlackoutShareOptions,
-        PublishEnv,
-        ShareBlackoutResponse,
-        _,
-        _,
-    >("blackout-share", |context| async move {
-        match blackout::remote(
-            &context.options.endpoint,
-            &context.env.footon_token,
-            &context.args.share,
-            context.args.message,
-            &context.args.text,
-        )
-        .await
-        {
-            Ok(output) => TypedResult::ok(output),
-            Err(error) => typed_error(&error),
-        }
-    })
+    CommandDef::typed::<BlackoutShareArgs, BlackoutShareOptions, (), ShareBlackoutResponse, _, _>(
+        "blackout-share",
+        |context| async move {
+            let environment_token = std::env::var("FOOTON_TOKEN").ok();
+            let token = match session::resolve_access_token(
+                &context.options.endpoint,
+                environment_token.as_deref(),
+                &KeyringStore,
+            )
+            .await
+            {
+                Ok(token) => token,
+                Err(error) => return typed_error(&error),
+            };
+            match blackout::remote(
+                &context.options.endpoint,
+                &token,
+                &context.args.share,
+                context.args.message,
+                &context.args.text,
+            )
+            .await
+            {
+                Ok(output) => TypedResult::ok(output),
+                Err(error) => typed_error(&error),
+            }
+        },
+    )
     .description("Black out one exact substring in an owner-controlled live share")
     .mcp(mutation_options(true))
     .done()
@@ -171,7 +240,7 @@ fn draft_command() -> CommandDef {
 }
 
 fn publish_command() -> CommandDef {
-    CommandDef::typed::<PublishArgs, PublishOptions, PublishEnv, PublishResponse, _, _>(
+    CommandDef::typed::<PublishArgs, PublishOptions, (), PublishResponse, _, _>(
         "publish",
         |context| async move {
             match publish_draft(context).await {
@@ -213,11 +282,18 @@ async fn fetch_share(context: TypedContext<FetchArgs, (), ()>) -> crate::error::
 }
 
 async fn publish_draft(
-    context: TypedContext<PublishArgs, PublishOptions, PublishEnv>,
+    context: TypedContext<PublishArgs, PublishOptions, ()>,
 ) -> crate::error::Result<PublishResponse> {
     let draft = draft::read(Path::new(&context.args.draft))?;
     let share = publish::build_share(draft, chrono::Utc::now())?;
-    publish::send(&context.options.endpoint, &context.env.footon_token, &share).await
+    let environment_token = std::env::var("FOOTON_TOKEN").ok();
+    let token = session::resolve_access_token(
+        &context.options.endpoint,
+        environment_token.as_deref(),
+        &KeyringStore,
+    )
+    .await?;
+    publish::send(&context.options.endpoint, &token, &share).await
 }
 
 fn typed_error<T>(error: &Error) -> TypedResult<T> {
@@ -240,5 +316,7 @@ fn error_code(error: &Error) -> &'static str {
         Error::Endpoint(_) => "UNSAFE_ENDPOINT",
         Error::Publish(_) => "PUBLISH_FAILED",
         Error::Fetch(_) => "FETCH_FAILED",
+        Error::Signin(_) => "SIGNIN_FAILED",
+        Error::Session(_) => "SESSION_FAILED",
     }
 }

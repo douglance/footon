@@ -30,6 +30,10 @@ pub enum Error {
     Publish(String),
     #[error("fetch request failed: {0}")]
     Fetch(String),
+    #[error("sign-in failed: {0}")]
+    Signin(String),
+    #[error("session failed: {0}")]
+    Session(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

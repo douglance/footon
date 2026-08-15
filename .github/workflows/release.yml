@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag, version, and changelog
+        shell: bash
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "footon") | .version')
+          test "v${version}" = "${GITHUB_REF_NAME}"
+          grep -F "## [${version}] - " CHANGELOG.md
+
+      - name: Install Rust 1.95
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
+          rustup default 1.95.0
+
+      - name: Install Node 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          package-manager-cache: false
+
+      - name: Install locked build and audit tools
+        run: |
+          cargo install worker-build --version 0.8.5 --locked
+          cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run complete release gate
+        run: npm run verify:release
+
+  create-draft:
+    name: Create draft release
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Create idempotent draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            test "$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft)" = true
+          else
+            gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft --verify-tag --title "Footon ${GITHUB_REF_NAME}" --generate-notes
+          fi
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: create-draft
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            executable: footon
+            archive: tar
+          - os: macos-14
+            target: aarch64-apple-darwin
+            executable: footon
+            archive: tar
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            executable: footon
+            archive: tar
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            executable: footon.exe
+            archive: zip
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+
+      - name: Install Rust 1.95
+        shell: bash
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --target "${{ matrix.target }}"
+          rustup default 1.95.0
+
+      - name: Build locked release binary
+        run: cargo build --release --locked -p footon --target ${{ matrix.target }}
+
+      - name: Package Unix binary and checksum
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: |
+          name="footon-${GITHUB_REF_NAME#v}-${{ matrix.target }}"
+          mkdir -p dist/package
+          cp "target/${{ matrix.target }}/release/${{ matrix.executable }}" dist/package/footon
+          tar -C dist/package -czf "dist/${name}.tar.gz" footon
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "dist/${name}.tar.gz" > "dist/${name}.tar.gz.sha256"
+          else
+            shasum -a 256 "dist/${name}.tar.gz" > "dist/${name}.tar.gz.sha256"
+          fi
+
+      - name: Package Windows binary and checksum
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $name = "footon-$($env:GITHUB_REF_NAME.TrimStart('v'))-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path dist/package | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.executable }}" "dist/package/footon.exe"
+          Compress-Archive -Path "dist/package/footon.exe" -DestinationPath "dist/$name.zip"
+          $hash = (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name.zip" | Set-Content "dist/$name.zip.sha256"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release upload "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --clobber

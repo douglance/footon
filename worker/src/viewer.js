@@ -127,6 +127,17 @@ function initializeViewer(viewer) {
     scrollTarget.scrollTo({ top, behavior });
   }
 
+  function setScrollTop(top, behavior = "auto") {
+    const maximum = Math.max(0, scrollHeight() - viewportHeight());
+    scrollTarget.scrollTo({ top: Math.min(maximum, Math.max(0, top)), behavior });
+  }
+
+  function updateScrollbarValue() {
+    const maximum = Math.max(0, scrollHeight() - viewportHeight());
+    canvas.setAttribute("aria-valuemax", String(Math.round(maximum)));
+    canvas.setAttribute("aria-valuenow", String(Math.round(scrollTop())));
+  }
+
   function stopDragging(event) {
     if (!dragging) return;
     dragging = false;
@@ -136,8 +147,11 @@ function initializeViewer(viewer) {
   }
 
   canvas.tabIndex = 0;
-  canvas.setAttribute("role", "navigation");
+  canvas.setAttribute("role", "scrollbar");
   canvas.setAttribute("aria-label", "Thread minimap");
+  canvas.setAttribute("aria-controls", viewer.id || "thread-messages");
+  canvas.setAttribute("aria-orientation", "vertical");
+  canvas.setAttribute("aria-valuemin", "0");
   canvas.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     dragging = true;
@@ -149,10 +163,29 @@ function initializeViewer(viewer) {
   });
   canvas.addEventListener("pointerup", stopDragging);
   canvas.addEventListener("pointercancel", stopDragging);
+  canvas.addEventListener("keydown", (event) => {
+    const line = Math.max(40, viewportHeight() / 10);
+    const page = Math.max(80, viewportHeight() * 0.8);
+    const destinations = {
+      ArrowUp: scrollTop() - line,
+      ArrowDown: scrollTop() + line,
+      PageUp: scrollTop() - page,
+      PageDown: scrollTop() + page,
+      Home: 0,
+      End: scrollHeight(),
+    };
+    if (!(event.key in destinations)) return;
+    event.preventDefault();
+    setScrollTop(destinations[event.key]);
+  });
   rail?.prepend(canvas);
   for (const filter of filters) filter.addEventListener("change", applyFilters);
-  scrollTarget.addEventListener("scroll", schedule, { passive: true });
+  scrollTarget.addEventListener("scroll", () => {
+    updateScrollbarValue();
+    schedule();
+  }, { passive: true });
   addEventListener("resize", layout);
   addEventListener("load", layout, { once: true });
   applyFilters();
+  updateScrollbarValue();
 }

@@ -92,13 +92,6 @@ async fn thread_view(
             aria-label=(label)
             data-thread-scroll=(scroll_container.to_string())
         >
-            <input
-                class="thread-view-toggle"
-                id="thread-view"
-                type="checkbox"
-                aria-label="Show source text for all messages"
-                checked=(text_mode)
-            >
             thread_minimap(messages: messages)
             <div class="meta">
                 <div class="document-heading">
@@ -106,15 +99,27 @@ async fn thread_view(
                     <p>(summary)</p>
                 </div>
                 <div class="toolbar" role="toolbar" aria-label="Thread display controls">
-                    <div class="role-filters" aria-label="Message filters">
-                        <input class="filter-input" id="filter-user" type="checkbox" data-filter-role="user" checked="checked">
-                        <label class="filter-toggle user" for="filter-user">"USER"</label>
-                        <input class="filter-input" id="filter-agent" type="checkbox" data-filter-role="assistant" checked="checked">
-                        <label class="filter-toggle assistant" for="filter-agent">"AGENT"</label>
-                        <input class="filter-input" id="filter-tools" type="checkbox" data-filter-role="tool" checked="checked">
-                        <label class="filter-toggle tool" for="filter-tools">"TOOL"</label>
+                    <div class="role-filters" role="group" aria-label="Message filters">
+                        <label class="filter-toggle user">
+                            <input class="filter-input" id="filter-user" type="checkbox" data-filter-role="user" checked="checked">
+                            "USER"
+                        </label>
+                        <label class="filter-toggle assistant">
+                            <input class="filter-input" id="filter-agent" type="checkbox" data-filter-role="assistant" checked="checked">
+                            "AGENT"
+                        </label>
+                        <label class="filter-toggle tool">
+                            <input class="filter-input" id="filter-tools" type="checkbox" data-filter-role="tool" checked="checked">
+                            "TOOL"
+                        </label>
                     </div>
-                    <label class="view-control" for="thread-view" title="Toggle rendered or source text">
+                    <label class="view-control" title="Toggle rendered or source text">
+                        <input
+                            class="thread-view-toggle"
+                            type="checkbox"
+                            aria-label="Show source text for all messages"
+                            checked=(text_mode)
+                        >
                         <span class="view-icon rendered-icon" aria-hidden="true">
                             <svg viewBox="0 0 16 16" focusable="false">
                                 <path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4S1.5 8 1.5 8Z"></path>
@@ -195,7 +200,13 @@ fn activity_end(messages: &[Message], start: usize) -> usize {
 async fn thread_rows(messages: &[Message]) -> Result {
     let groups = group_messages(messages);
     view! {
-        <div class="thread">
+        <h2 class="visually-hidden" id="thread-messages-heading">"Thread messages"</h2>
+        <div
+            class="thread"
+            id="thread-messages"
+            role="region"
+            aria-labelledby="thread-messages-heading"
+        >
             for group in groups {
                 match group {
                     ThreadGroup::Call { message, activity, index } => {

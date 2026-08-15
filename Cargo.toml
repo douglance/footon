@@ -6,6 +6,9 @@ resolver = "3"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"
+authors = ["Douglas Lance"]
+homepage = "https://footon.dev"
+repository = "https://github.com/douglance/footon"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
