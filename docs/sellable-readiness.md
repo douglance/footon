@@ -4,7 +4,7 @@ Status: in review
 Version: 0.2
 Owner: Product owner
 Approvers: Douglas Lance
-Inputs: User goal "finalize all work. professionalize it and we will begin selling"; user clarifications "same rules as Google Docs ... keep it ultra simple" and "public is free forever, private costs money"; release tag `v0.2.0` at c62a128bc35e04ac92062cc7ad25c06dff3bc89a; production Worker version 357e8348-5304-4605-9a8c-4b9c3c05c424
+Inputs: User goal "finalize all work. professionalize it and we will begin selling"; user clarifications "same rules as Google Docs ... keep it ultra simple" and "public is free forever, private costs money"; release tag `v0.2.0` at c62a128bc35e04ac92062cc7ad25c06dff3bc89a; production policy commit `828676548b7924e64e2071a015cdd754be2e94e1`; production Worker version `134c49aa-9e35-4b49-be1f-fe2ba74c82db`
 Governing references: ISO/IEC/IEEE 29148:2018 information model; ISO/IEC/IEEE 15289:2019 information-item model; README.md; cli/README.md; wrangler.jsonc
 Tailoring: This specification combines product, quality, release, and launch requirements owned by the product-owner phase. It does not claim formal standards conformance or legal review.
 
@@ -17,11 +17,11 @@ public and private shares, named roles, service keys, remote reports, billing
 state, and customer information routes. Production D1 contains every migration
 through `0007_service_keys_and_log_reports.sql`.
 
-The current release work tightens the commercial invariant: public shares are
+The production service enforces the commercial invariant: public shares are
 unlimited and free forever; private creation, access, and mutation require an
 active Pro entitlement. When Pro ends, private data remains stored but pauses
 until the owner renews, makes the share public, or revokes it. This change is
-locally implemented and tested but is not yet committed or deployed.
+committed, tested, deployed, and serving 100% of production traffic.
 
 Paid checkout is not active. Production lacks the Lemon Squeezy webhook secret
 and monthly and annual checkout URLs, and the local Lemon Squeezy operator has
@@ -184,7 +184,7 @@ The first paid release serves individual developers. Team and enterprise capabil
 ## Risks
 
 - RISK-001 Lemon Squeezy API authentication and catalog setup are not configured. This blocks live checkout and webhook proof.
-- RISK-003 Production runs `v0.2.0`; the current public-free/private-paid retention changes remain undeployed until they are committed, reviewed, and released.
+- RISK-003 The public-free/private-paid policy is live, but checkout remains deliberately unavailable until the paid lifecycle is configured and accepted.
 - RISK-004 The paid legal draft has not received legal review, and delivery to `support@footon.dev` is not yet verified.
 - RISK-005 `worker/src/lib.rs` exceeds 2,600 lines, increasing review and release risk. The recorded split plan below limits further growth.
 - RISK-006 Stored CLI credentials add a local secret-management dependency that requires platform-specific tests and recovery behavior.
@@ -235,31 +235,30 @@ rendered-page smoke checks used for the paid launch.
 | Footon is local-first and safety-oriented | `README.md:3`, `README.md:60`; `cli/README.md:26` | Current public contract preserves local drafting and explicit token injection. | High |
 | The complete current repository release gate passes | Apoc execution `01a00848-01e2-7340-a25a-0ac7bb4779ba` on 2026-08-16 | Formatting, strict Clippy, every workspace test, the optimized Worker Wasm build, RustSec audit of 394 dependencies, npm audit with zero vulnerabilities, and clean package verification passed. Four component doctest examples remain intentionally ignored. | High |
 | The current pricing surface passed rendered acceptance | `/tmp/footon-visual-jgvJvX`; isolated local server `01a0083c-6895-7300-813f-a6e059ef7121`; browser executions `01a00842-b08d-7721-84b4-027d023b46a1` through `01a00843-8b2e-7453-ad12-d96b47011ab3` | Desktop 1440x900, tablet 1024x768, and mobile 390x844 captures were inspected. All viewports had no horizontal overflow; both email inputs had explicit labels; keyboard order moved from each email field to its matching checkout action; axe-core 4.12.1 reported zero WCAG A/AA violations and zero incomplete checks on desktop and mobile. | High |
-| CLI session work is not live-accepted | `cli/src/session.rs`; `cli/tests/session.rs`; `cli/tests/signin.rs` | Mock OAuth tests cover storage, rotation, safe output, and sign-out; a fresh production code flow remains required. | Medium |
-| Owner authentication can be reused | `migrations/0003_rust_oauth.sql`; `worker/src/lib.rs`; `cli/src/session.rs`; CLI sign-in tests | Email-code OAuth produces scoped user identities and reusable sessions. A fresh production acceptance run remains required for this release. | High |
+| CLI session work is live-accepted | `cli/src/session.rs`; `cli/tests/session.rs`; `cli/tests/signin.rs`; Apoc executions `01a0085c-c81c-77d3-a184-17660790a580` and `01a00860-365e-7453-8888-aaf77c4cd013` on 2026-08-16 | A fresh production email-code exchange for `doug.lance@gmail.com` completed with exit status 0 without printing credentials. A subsequent `footon shares` call used the stored session and returned the owner's share with exit status 0. | High |
+| Owner authentication can be reused | `migrations/0003_rust_oauth.sql`; `worker/src/lib.rs`; `cli/src/session.rs`; CLI sign-in tests; live authenticated shares read `01a00860-365e-7453-8888-aaf77c4cd013` | Email-code OAuth produces scoped user identities and a stored session accepted by a separate production CLI process. | High |
 | Viewer authorization is implemented | `migrations/0006_share_access.sql`; `worker/src/access.rs`; `worker/src/shares.rs` | Private shares use named Owner, Editor, and Viewer roles, email-code browser sessions, generic unauthorized responses, and private cache controls. | High |
 | Mutations use one role matrix across HTTP and MCP | `worker/src/access.rs`; `worker/src/shares.rs`; `cli/src/sharing.rs` | Owners, Editors, and Viewers receive the documented fixed capabilities. Current tests cover the pure matrix and wire values; live multi-account acceptance remains required. | High |
-| Commercial and legal routes are live and locally updated | `worker/src/ui/commercial.rs`; `worker/src/ui/pages.rs`; production Worker `357e8348-5304-4605-9a8c-4b9c3c05c424` | Production serves pricing, security, support, privacy, and terms as HTML and Markdown. The current checkout makes the free-public/paid-private boundary explicit and awaits deployment. | High |
-| Production reproduces tagged `v0.2.0` | Tag `v0.2.0` at `c62a128bc35e04ac92062cc7ad25c06dff3bc89a`; Worker version `357e8348-5304-4605-9a8c-4b9c3c05c424` at 100% traffic | The deployed source and version were read back on 2026-08-15. Current uncommitted changes are intentionally not represented in production yet. | High |
-| CI and release records are current for `v0.2.0` | GitHub CI run `31906958751`; release run `31906958766`; crates.io `footon` 0.2.0 | The published source release and CLI package are current. A new version, tag, CI run, release, and crates.io publication are required for the present changes. | High |
+| Commercial and legal routes are live | `worker/src/ui/commercial.rs`; `worker/src/ui/pages.rs`; production Worker `134c49aa-9e35-4b49-be1f-fe2ba74c82db` | Production serves pricing, security, support, privacy, and terms as HTML and Markdown. Pricing states that public is free forever and private is Pro. Checkout returns 503 while billing configuration is absent. | High |
+| Production reproduces the policy commit | Commit `828676548b7924e64e2071a015cdd754be2e94e1`; Worker version `134c49aa-9e35-4b49-be1f-fe2ba74c82db` at 100% traffic; rollback version `357e8348-5304-4605-9a8c-4b9c3c05c424` | The exact commit passed CI, was deployed, and was read back through production health, pricing, checkout-failure, and deployment-list smoke checks on 2026-08-16. | High |
+| CI and release records are current for the policy deployment | GitHub CI run `31920901324`; commit `828676548b7924e64e2071a015cdd754be2e94e1`; crates.io `footon` 0.2.0 | All four CLI platform jobs and the quality/package gate passed for the deployed commit. The existing CLI package remains current because this commit changed Worker and documentation behavior, not CLI code. A paid-release tag and GitHub release remain gated on live billing acceptance. | High |
 | Billing core is locally implemented; activation is unavailable | `worker/src/billing.rs`; `worker/src/billing_adapter.rs`; `migrations/0005_billing.sql`; local signed-webhook runtime on 2026-08-15 | Signature verification, replay protection, entitlement transitions, limits, checkout URL construction, and authenticated billing status are locally proven. No real store, variant, checkout, or webhook can be verified without Lemon Squeezy access. | High |
 | Production D1 administration and schema are current | Remote migration readback on 2026-08-15; post-deployment bookmark `000000a5-00000000-000050c8-357feef709ad9401ea5190d1fa6285da` | Migrations through `0007_service_keys_and_log_reports.sql` are applied and no migration is pending. | High |
-| Outbound email configuration is current | Wrangler Email Sending and destination-address reads on 2026-08-15; public DNS MX, SPF, DKIM, and DMARC resolution | `footon.dev` sending is enabled and the launch account address is a verified destination. Final personal-inbox receipt and CLI exchange remain pending. | High |
+| Outbound email configuration is current | Wrangler Email Sending and destination-address reads on 2026-08-15; public DNS MX, SPF, DKIM, and DMARC resolution; live CLI sign-in `01a0085c-c81c-77d3-a184-17660790a580` | `footon.dev` sending is enabled, the launch account is verified, and a production sign-in email reached the intended Gmail account and completed the exchange. | High |
 | Production observability is configured | `wrangler.jsonc:9` | Cloudflare Workers observability is enabled at full head sampling. Log content and alerts remain unverified. | Medium |
 
 ## Open items
 
 - OPEN-COM-001 Owner: Douglas Lance. Configure a Lemon Squeezy API key and create the Footon Pro monthly and annual variants. Effect: blocks live checkout, webhook, and entitlement acceptance.
-- OPEN-AUTH-001 Owner: Douglas Lance and release operator. Complete one live CLI email-code sign-in and record the credential-safe exit status and authenticated status result. Effect: blocks live acceptance of the default sign-in path.
-- OPEN-REL-001 Owner: Release operator and reviewer. Version, commit, push, run CI, tag, publish, deploy, and smoke-test the current free-public/paid-private release with Worker version `357e8348-5304-4605-9a8c-4b9c3c05c424` recorded as the rollback target. Effect: blocks a reproducible production release.
+- OPEN-REL-001 Owner: Release operator and reviewer. After billing acceptance, create the paid-release tag and GitHub release. The policy commit is committed, pushed, green in CI, deployed, and smoke-tested; Worker version `357e8348-5304-4605-9a8c-4b9c3c05c424` is the verified rollback target. Effect: blocks declaring the paid release complete, but does not block the live free service.
 - OPEN-LEGAL-001 Owner: Douglas Lance. Approve Douglas Lance as the named operator, verify and monitor `support@footon.dev`, approve the non-refundable-except-law policy, and approve the final legal copy. Effect: blocks declaring the paid terms approved.
 
 ## Handoff
 
 Receiver: Release operations
-Accepted inputs: FOOTON-SRS-001 version 0.2; user access-model and pricing clarifications; release tag `v0.2.0` at c62a128bc35e04ac92062cc7ad25c06dff3bc89a; production Worker 357e8348-5304-4605-9a8c-4b9c3c05c424
+Accepted inputs: FOOTON-SRS-001 version 0.2; user access-model and pricing clarifications; release tag `v0.2.0` at c62a128bc35e04ac92062cc7ad25c06dff3bc89a; production policy commit `828676548b7924e64e2071a015cdd754be2e94e1`; production Worker `134c49aa-9e35-4b49-be1f-fe2ba74c82db`
 Decisions: DEC-COM-001 launch prices; DEC-COM-002 Lemon Squeezy boundary; DEC-AUTH-001 secure credential storage; DEC-ACCESS-001 simple share access model; DEC-LAUNCH-001 individual launch
 Produced outputs: SAFE-001 through SAFE-006; AUTH-001 through AUTH-007; ACCESS-001 through ACCESS-015; BILL-001 through BILL-012; DOC-001 through DOC-005; OPS-001 through OPS-006; REL-001 through REL-003; QUAL-001 through QUAL-010
 Verification evidence: Repository and live-state evidence ledger above
-Open items: OPEN-COM-001, OPEN-AUTH-001, OPEN-REL-001, and OPEN-LEGAL-001
+Open items: OPEN-COM-001, OPEN-REL-001, and OPEN-LEGAL-001
 Acceptance checks: Preserve the immutable-snapshot boundary and the out-of-scope set; verify every public path remains free; verify every private and service-key path pauses without Pro; do not claim paid launch until every open item closes
