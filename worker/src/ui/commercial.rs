@@ -9,28 +9,36 @@ use crate::ui::layout::page_layout;
 pub(crate) fn pricing_markdown() -> &'static str {
     r"# Footon pricing
 
-Simple limits for individual developers. Prices are tax-inclusive USD where applicable.
+Public sharing is free forever. Private sharing requires Pro. Prices are tax-inclusive USD where applicable.
 
 ## Free - $0
 
-- Up to 3 active shares
+- Unlimited public shares
+- Public links are unlisted, revocable, and readable by anyone with the link
 - Local sanitization and review
-- Unlisted, revocable links
 - HTML for people and Markdown for agents
+- Private shares require Pro
 
 ## Pro monthly - $12 per month
 
-- Up to 100 active shares
-- The complete Footon safety and sharing workflow
+- Up to 100 private shares
+- Named Viewer and Editor access
+- Unlimited public shares
+- Service keys and remote reports
 - Cancel any time; access continues through the paid period
 
 ## Pro annual - $120 per year
 
-- Up to 100 active shares
+- Up to 100 private shares
+- Named Viewer and Editor access
+- Unlimited public shares
+- Service keys and remote reports
 - Two months less than monthly billing over one year
 - Cancel any time; access continues through the paid period
 
 Lemon Squeezy is the merchant of record and hosts checkout. Footon does not receive or store payment-card details. Enter the same email you use with Footon so the purchase can be associated with your account.
+
+If Pro ends, private shares remain stored but pause until you renew Pro or make them public. Public shares remain available and free.
 
 For billing help or a refund request, contact support@footon.dev. Refund eligibility is reviewed under the Terms and applicable law.
 "
@@ -41,7 +49,7 @@ pub(crate) fn security_markdown() -> &'static str {
 
 Footon keeps the raw transcript local while you draft. The CLI removes known secret, personal-data, path, and injected-instruction patterns before publication. You review the exact draft, explicitly approve it, and the service validates and scans it again before storage.
 
-Shared links are unlisted, not private. Anyone with a working URL can read that share until its owner revokes it. Automated scanning reduces risk but cannot guarantee that every sensitive value will be detected.
+Public share links are unlisted, not private. Anyone with a working URL can read a public share until its owner revokes it. Private shares require authentication and named access. Automated scanning reduces risk but cannot guarantee that every sensitive value will be detected.
 
 Authentication uses short-lived access tokens, rotating refresh tokens, PKCE S256, and one-time email codes. The CLI stores reusable credentials in the operating-system credential store.
 
@@ -76,8 +84,8 @@ pub(crate) async fn pricing_page() -> Result {
             commercial_nav()
             <header class="commercial-hero">
                 <p class="landing-eyebrow">"PRICING"</p>
-                <h1>"Share safely. Pay when you need more room."</h1>
-                <p>"Start with three active shares. Pro raises the limit to 100 without changing the local-first review workflow."</p>
+                <h1>"Public is free forever. Private is Pro."</h1>
+                <p>"Create as many public shares as you need. Upgrade only when a share needs named access and authentication."</p>
             </header>
             <section class="plan-grid" aria-label="Footon plans">
                 <article class="plan-card">
@@ -85,10 +93,11 @@ pub(crate) async fn pricing_page() -> Result {
                     <p class="plan-price"><strong>"$0"</strong></p>
                     <p class="plan-period">"No card. No trial."</p>
                     <ul>
-                        <li>"3 active shares"</li>
+                        <li>"Unlimited public shares"</li>
                         <li>"Local sanitization and review"</li>
-                        <li>"Unlisted, revocable links"</li>
+                        <li>"Unlisted, revocable public links"</li>
                         <li>"HTML and Markdown output"</li>
+                        <li>"Private shares require Pro"</li>
                     </ul>
                     <a class="plan-secondary" href="/#install-agent-prompt">"Install Footon"</a>
                 </article>
@@ -97,8 +106,10 @@ pub(crate) async fn pricing_page() -> Result {
                     <p class="plan-price"><strong>"$12"</strong> <span>"/ month"</span></p>
                     <p class="plan-period">"Tax-inclusive USD where applicable."</p>
                     <ul>
-                        <li>"100 active shares"</li>
-                        <li>"Complete safety and sharing workflow"</li>
+                        <li>"Up to 100 private shares"</li>
+                        <li>"Named Viewer and Editor access"</li>
+                        <li>"Unlimited public shares"</li>
+                        <li>"Service keys and remote reports"</li>
                         <li>"Cancel any time"</li>
                         <li>"Access through the paid period"</li>
                     </ul>
@@ -113,8 +124,10 @@ pub(crate) async fn pricing_page() -> Result {
                     <p class="plan-price"><strong>"$120"</strong> <span>"/ year"</span></p>
                     <p class="plan-period">"Two months less than monthly billing."</p>
                     <ul>
-                        <li>"100 active shares"</li>
-                        <li>"Complete safety and sharing workflow"</li>
+                        <li>"Up to 100 private shares"</li>
+                        <li>"Named Viewer and Editor access"</li>
+                        <li>"Unlimited public shares"</li>
+                        <li>"Service keys and remote reports"</li>
                         <li>"Cancel any time"</li>
                         <li>"Access through the paid period"</li>
                     </ul>
@@ -130,6 +143,7 @@ pub(crate) async fn pricing_page() -> Result {
                 <h2 id="payment-boundary">"Checkout is hosted by Lemon Squeezy."</h2>
                 <p>"Lemon Squeezy is the merchant of record. Footon receives the purchase status and account email needed to apply your plan, but it does not receive or store payment-card details."</p>
                 <p>"Use the same email you use with Footon. For billing help or a refund request, " <a href="mailto:support@footon.dev">"email support@footon.dev"</a> "."</p>
+                <p>"If Pro ends, private shares remain stored but pause until you renew Pro or make them public. Public shares remain available and free."</p>
             </section>
         )
     }
@@ -153,7 +167,7 @@ pub(crate) async fn security_page() -> Result {
                 <p>"The CLI drafts and sanitizes on your machine. Footon receives a thread only after you review and approve the exact sanitized copy."</p>
                 <h2>"Checked twice"</h2>
                 <p>"The service validates the document shape and scans the approved copy again before storage. Owners can black out exact text or revoke a link."</p>
-                <h2>"Unlisted, not private"</h2>
+                <h2>"Public links are unlisted, not private"</h2>
                 <p>"Anyone with a working share URL can read it until revocation. Do not publish data you cannot safely disclose to every recipient of that URL."</p>
                 <h2>"Account protection"</h2>
                 <p>"Footon uses one-time email codes, PKCE S256, short-lived access tokens, rotating refresh tokens, and operating-system credential storage in the CLI."</p>
@@ -235,12 +249,27 @@ mod tests {
         let security = security_page().await.expect("security page").render(&cx);
         let support = support_page().await.expect("support page").render(&cx);
 
-        for expected in ["$0", "$12", "$120", "3 active shares", "100 active shares"] {
+        for expected in [
+            "$0",
+            "$12",
+            "$120",
+            "Unlimited public shares",
+            "Private shares require Pro",
+            "Up to 100 private shares",
+        ] {
             assert!(pricing.contains(expected), "missing {expected}");
         }
+        let pricing_markdown = pricing_markdown();
+        assert!(pricing_markdown.contains("Unlimited public shares"));
+        assert!(pricing_markdown.contains("Private shares require Pro"));
+        assert!(pricing_markdown.contains("Up to 100 private shares"));
+        assert!(pricing.contains("private shares remain stored but pause"));
+        assert!(pricing_markdown.contains("private shares remain stored but pause"));
+        assert!(!pricing.contains("3 active shares"));
+        assert!(!pricing_markdown.contains("3 active shares"));
         assert!(pricing.contains("Lemon Squeezy"));
         assert!(pricing.contains("type=\"email\""));
-        assert!(security.contains("Unlisted, not private"));
+        assert!(security.contains("Public links are unlisted, not private"));
         assert!(security.contains("cannot guarantee"));
         assert!(support.contains("support@footon.dev"));
         assert!(support.contains("[REDACTED]"));

@@ -350,9 +350,13 @@ pub(crate) async fn authenticate_service_key(
     else {
         return Ok(None);
     };
-    if row.revoked_at.is_some()
-        || crate::parse_time(&row.expires_at).timestamp() < crate::unix_now()
-    {
+    let revoked = row.revoked_at.is_some();
+    let expired = crate::parse_time(&row.expires_at).timestamp() < crate::unix_now();
+    if revoked || expired {
+        return Ok(None);
+    }
+    let owner_is_pro = crate::user_is_pro(env, &row.owner_id).await?;
+    if !service_key_is_usable(revoked, expired, owner_is_pro) {
         return Ok(None);
     }
     db.prepare(
@@ -371,6 +375,10 @@ pub(crate) async fn authenticate_service_key(
             system: row.system,
         },
     }))
+}
+
+const fn service_key_is_usable(revoked: bool, expired: bool, owner_is_pro: bool) -> bool {
+    !revoked && !expired && owner_is_pro
 }
 
 pub(crate) async fn tool_create_key(
@@ -827,6 +835,14 @@ mod tests {
         );
         assert!(canonical_service_scope("keys:manage").is_err());
         assert!(canonical_service_scope("").is_err());
+    }
+
+    #[test]
+    fn service_keys_pause_when_the_owner_no_longer_has_pro() {
+        assert!(service_key_is_usable(false, false, true));
+        assert!(!service_key_is_usable(false, false, false));
+        assert!(!service_key_is_usable(true, false, true));
+        assert!(!service_key_is_usable(false, true, true));
     }
 
     #[test]

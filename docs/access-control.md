@@ -34,6 +34,11 @@ same page either way. Codes expire after 10 minutes and allow five attempts.
 Successful verification creates a 30-day secure, HTTP-only browser session.
 Private responses use `Cache-Control: private, no-store`.
 
+Private access depends on the owner's active Pro entitlement. When Pro ends,
+Footon keeps the private share and its member list, but pauses private reads and
+mutations. The owner can renew Pro, make the share public, or revoke it. Public
+shares remain readable and do not consume private-share capacity.
+
 The access model is shared by the HTTP API, CLI commands, local stdio MCP, and
 the remote OAuth MCP endpoint. `SHARE_ACCESS_WRITES_ENABLED=false` stops new
 private expansion without disabling public creation or reads of existing shares.

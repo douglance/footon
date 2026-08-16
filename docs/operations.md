@@ -49,7 +49,7 @@ in Git, shell history, logs, screenshots, or release records:
 | `LEMON_SQUEEZY_MONTHLY_CHECKOUT_URL` | Worker variable | HTTPS `*.lemonsqueezy.com/checkout/buy/...` URL for the $12 monthly Pro variant. |
 | `LEMON_SQUEEZY_ANNUAL_CHECKOUT_URL` | Worker variable | HTTPS `*.lemonsqueezy.com/checkout/buy/...` URL for the $120 annual Pro variant. |
 | `EMAIL` | Cloudflare Send Email binding | Sends one-time codes from `login@footon.dev`. |
-| `SHARE_ACCESS_WRITES_ENABLED` | Worker variable | `true` enables private creation and member/visibility expansion. Set to `false` to stop new private expansion while keeping public shares and existing authorized private reads available. |
+| `SHARE_ACCESS_WRITES_ENABLED` | Worker variable | `true` enables private creation and member/visibility expansion. Set to `false` to stop new private expansion while keeping public shares available and existing private reads available only for owners with active Pro. |
 | `support@footon.dev` | Monitored mailbox or route | Receive and reply to a private test message; verify the recovery owner and spam handling. |
 
 The Lemon Squeezy webhook target is
@@ -90,13 +90,13 @@ security headers, elapsed time, and the Worker version ID:
 | One existing public share | `200` as HTML and Markdown |
 | One unauthorized private share | Generic email-code page as HTML and `401` for Markdown; no title, owner, or member disclosure |
 | One authorized private share | Viewer can read; Editor can rename, blackout, and manage Viewers; only Owner can change visibility, manage Editors, transfer, or revoke |
-| Public/private billing boundary | Public creation remains available without Pro or a private-share slot; private creation and expansion require active Pro capacity |
+| Public/private billing boundary | Public creation and access remain free without a quota; private creation, access, and mutation require active Pro, while lapsed owners can make a private share public or revoke it |
 | Service-key lifecycle | Pro owner can issue, list, use, and revoke a scoped key; a revoked key receives `401`; listings never return the secret |
 | Remote reports | Seeded report is idempotent, stored under the issuing owner and key, redacts a bearer token, and is hidden from other owners and keys |
 | Unknown share | `404` without internal error detail |
 | OAuth request and email code | Correct normalized email, one code, no credential output |
 | CLI publish and revoke | New sanitized share is readable, then becomes `404` after revoke |
-| Authenticated `/api/billing` | Current plan, usage, limit, expiry, and validated Lemon Squeezy portal URL match D1 |
+| Authenticated `/api/billing` | Current plan, `activePrivateShares`, `privateShareLimit`, expiry, and validated Lemon Squeezy portal URL match D1; `activeShares` and `activeShareLimit` remain equivalent compatibility aliases |
 | Monthly and annual checkout | `303` to the expected Lemon Squeezy checkout host with the normalized Footon email; no card data reaches Footon |
 | Billing lifecycle | Purchase, renewal, cancellation grace, expiry, refund, and exact duplicate event produce the required entitlement state |
 

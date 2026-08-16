@@ -113,7 +113,7 @@ Email support@footon.dev to request access, correction, export, or deletion of p
 
 ## Your responsibility
 
-Do not publish information you do not have permission to share. Review the exact draft before publishing it. Shares are unlisted, not private: anyone with the URL can read an active share.
+Do not publish information you do not have permission to share. Review the exact draft before publishing it. Public shares are unlisted, not private: anyone with the URL can read an active public share. Private shares require authentication and named access.
 
 ## Contact
 
@@ -130,13 +130,13 @@ Footon is operated by Douglas Lance as an individual developer. These terms appl
 
 ## Using Footon
 
-Footon provides tools for creating and sharing a reviewed, sanitized copy of an agent thread. You are responsible for the content you publish, confirming that you have permission to share it, and reviewing the final draft before publication. Shares are unlisted, not private: anyone with a working share URL can read that share until it is revoked.
+Footon provides tools for creating and sharing a reviewed, sanitized copy of an agent thread. You are responsible for the content you publish, confirming that you have permission to share it, and reviewing the final draft before publication. Public shares are unlisted, not private: anyone with a working public share URL can read that share until it is revoked. Private shares require authentication and named access.
 
 ## Plans, renewal, and cancellation
 
-The Free plan includes up to 3 active shares. Footon Pro includes up to 100 active shares and is offered for $12 per month or $120 per year in USD, plus any amount shown at checkout. Lemon Squeezy is the merchant of record and hosts checkout.
+The Free plan includes unlimited public shares. Private shares require Footon Pro, which includes up to 100 active private shares and is offered for $12 per month or $120 per year in USD, plus any amount shown at checkout. Lemon Squeezy is the merchant of record and hosts checkout.
 
-Paid subscriptions renew automatically for the selected monthly or annual period until canceled. You can cancel through the customer-portal link returned by Footon or by emailing support@footon.dev. Cancel before the renewal date to avoid the next charge. After cancellation, Pro remains active through the end of the paid period unless the subscription is refunded, reversed, or terminated for cause.
+Paid subscriptions renew automatically for the selected monthly or annual period until canceled. You can cancel through the customer-portal link returned by Footon or by emailing support@footon.dev. Cancel before the renewal date to avoid the next charge. After cancellation, Pro remains active through the end of the paid period unless the subscription is refunded, reversed, or terminated for cause. When Pro ends, private shares remain stored but cannot be opened or changed until the owner renews Pro or makes them public. Public shares remain available and free.
 
 Except where applicable law requires otherwise, completed subscription payments are non-refundable. Email support@footon.dev for a duplicate charge, billing error, or exceptional refund request. Approved refunds are processed through Lemon Squeezy and may revoke Pro access. Future prices or plan limits may change with notice before a later renewal; a change does not alter a period already paid.
 
@@ -146,7 +146,7 @@ Do not use Footon to break the law, harm others, expose private information with
 
 ## Your content
 
-You keep your rights to your content and give Footon only the permission needed to host, process, display, and deliver it. Shares are unlisted, not private: anyone with a working share URL can read that share until it is revoked.
+You keep your rights to your content and give Footon only the permission needed to host, process, display, and deliver it. Anyone with a working public share URL can read that public share until it is revoked. Private shares require authentication and named access.
 
 ## Availability, warranties, and liability
 
@@ -401,7 +401,7 @@ pub(crate) async fn privacy_page() -> Result {
                 <p>"Billing event, subscription, and entitlement records may be retained for up to 7 years after the related transaction or subscription ends for accounting, tax, fraud prevention, dispute handling, and legal compliance. Support email is retained only as long as reasonably needed to resolve the request and meet those obligations. Provider backups and security logs may persist for their configured retention windows before aging out."</p>
                 <p>"Email support@footon.dev to request access, correction, export, or deletion of personal information. Footon will verify the request and honor it where applicable law requires, subject to security, accounting, dispute, and legal retention duties."</p>
                 <h2>"Your responsibility"</h2>
-                <p>"Do not publish information you do not have permission to share. Review the exact draft before publishing it. Shares are unlisted, not private: anyone with the URL can read an active share."</p>
+                <p>"Do not publish information you do not have permission to share. Review the exact draft before publishing it. Public shares are unlisted, not private: anyone with the URL can read an active public share. Private shares require authentication and named access."</p>
                 <h2>"Contact"</h2>
                 <p>"For private privacy questions or requests, email " <a href="mailto:support@footon.dev">"support@footon.dev"</a> ". Do not put private information in a public GitHub issue."</p>
             </article>
@@ -428,15 +428,15 @@ pub(crate) async fn terms_page() -> Result {
                 <p class="legal-effective">"Effective August 14, 2026"</p>
                 <p>"Footon is operated by Douglas Lance as an individual developer. These terms apply when you access or use the Footon website, CLI, MCP server, sharing service, or paid plan. By using Footon, you agree to them."</p>
                 <h2>"Using Footon"</h2>
-                <p>"Footon provides tools for creating and sharing a reviewed, sanitized copy of an agent thread. You are responsible for the content you publish, confirming that you have permission to share it, and reviewing the final draft before publication. Shares are unlisted, not private: anyone with a working share URL can read that share until it is revoked."</p>
+                <p>"Footon provides tools for creating and sharing a reviewed, sanitized copy of an agent thread. You are responsible for the content you publish, confirming that you have permission to share it, and reviewing the final draft before publication. Public shares are unlisted, not private: anyone with a working public share URL can read that share until it is revoked. Private shares require authentication and named access."</p>
                 <h2>"Plans, renewal, and cancellation"</h2>
-                <p>"The Free plan includes up to 3 active shares. Footon Pro includes up to 100 active shares and is offered for $12 per month or $120 per year in USD, plus any amount shown at checkout. Lemon Squeezy is the merchant of record and hosts checkout."</p>
-                <p>"Paid subscriptions renew automatically for the selected monthly or annual period until canceled. You can cancel through the customer-portal link returned by Footon or by emailing support@footon.dev. Cancel before the renewal date to avoid the next charge. After cancellation, Pro remains active through the end of the paid period unless the subscription is refunded, reversed, or terminated for cause."</p>
+                <p>"The Free plan includes unlimited public shares. Private shares require Footon Pro, which includes up to 100 active private shares and is offered for $12 per month or $120 per year in USD, plus any amount shown at checkout. Lemon Squeezy is the merchant of record and hosts checkout."</p>
+                <p>"Paid subscriptions renew automatically for the selected monthly or annual period until canceled. You can cancel through the customer-portal link returned by Footon or by emailing support@footon.dev. Cancel before the renewal date to avoid the next charge. After cancellation, Pro remains active through the end of the paid period unless the subscription is refunded, reversed, or terminated for cause. When Pro ends, private shares remain stored but cannot be opened or changed until the owner renews Pro or makes them public. Public shares remain available and free."</p>
                 <p>"Except where applicable law requires otherwise, completed subscription payments are non-refundable. Email support@footon.dev for a duplicate charge, billing error, or exceptional refund request. Approved refunds are processed through Lemon Squeezy and may revoke Pro access. Future prices or plan limits may change with notice before a later renewal; a change does not alter a period already paid."</p>
                 <h2>"Acceptable use"</h2>
                 <p>"Do not use Footon to break the law, harm others, expose private information without permission, interfere with the service, or distribute malicious content."</p>
                 <h2>"Your content"</h2>
-                <p>"You keep your rights to your content and give Footon only the permission needed to host, process, display, and deliver it. Shares are unlisted, not private: anyone with a working share URL can read that share until it is revoked."</p>
+                <p>"You keep your rights to your content and give Footon only the permission needed to host, process, display, and deliver it. Anyone with a working public share URL can read that public share until it is revoked. Private shares require authentication and named access."</p>
                 <h2>"Availability, warranties, and liability"</h2>
                 <p>"Footon may change, suspend, or stop all or part of the service. Automated scanning reduces risk but cannot guarantee that a draft is safe, complete, available, or error-free. To the fullest extent permitted by law, Footon is provided as available without express or implied warranties."</p>
                 <p>"Footon and its operator are not liable for indirect, incidental, special, consequential, or punitive loss. For any claim relating to paid Footon service, aggregate liability will not exceed the amount you paid for Footon during the 12 months before the event giving rise to the claim. These limits do not apply where law prohibits them."</p>

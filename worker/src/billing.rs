@@ -5,7 +5,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-pub const PRO_ACTIVE_SHARE_LIMIT: u32 = 100;
+pub const PRO_PRIVATE_SHARE_LIMIT: u32 = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BillingUpdate {
@@ -65,7 +65,7 @@ pub enum SubscriptionStatus {
 pub enum EntitlementProjection {
     GrantPro {
         valid_until: String,
-        active_share_limit: u32,
+        private_share_limit: u32,
         source_subscription_id: Option<String>,
         customer_portal_url: Option<String>,
     },
@@ -443,7 +443,7 @@ fn grant_with(
     let valid_until = valid_until.ok_or(BillingError::MissingValidUntil)?;
     Ok(EntitlementProjection::GrantPro {
         valid_until,
-        active_share_limit: PRO_ACTIVE_SHARE_LIMIT,
+        private_share_limit: PRO_PRIVATE_SHARE_LIMIT,
         source_subscription_id: subscription_id,
         customer_portal_url,
     })
@@ -550,7 +550,7 @@ mod tests {
             update.entitlement,
             EntitlementProjection::GrantPro {
                 valid_until: "2026-09-01T00:00:00Z".to_string(),
-                active_share_limit: PRO_ACTIVE_SHARE_LIMIT,
+                private_share_limit: PRO_PRIVATE_SHARE_LIMIT,
                 source_subscription_id: Some("sub_123".to_string()),
                 customer_portal_url: Some("https://app.lemonsqueezy.com/my-orders/abc".to_string()),
             }
@@ -583,7 +583,7 @@ mod tests {
             update.entitlement,
             EntitlementProjection::GrantPro {
                 valid_until: "2026-08-31T00:00:00Z".to_string(),
-                active_share_limit: PRO_ACTIVE_SHARE_LIMIT,
+                private_share_limit: PRO_PRIVATE_SHARE_LIMIT,
                 source_subscription_id: Some("sub_cancel".to_string()),
                 customer_portal_url: None,
             }

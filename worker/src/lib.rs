@@ -26,7 +26,7 @@ mod shares;
 mod systems;
 mod ui;
 
-use access::{GeneralAccess, ShareAction, load_share_access};
+use access::{GeneralAccess, ShareAction, action_is_available_for_plan, load_share_access};
 use billing_adapter::{
     billing_status, checkout, lemon_squeezy_webhook, user_has_private_share_capacity, user_is_pro,
 };
@@ -617,6 +617,19 @@ async fn api_blackout_share(req: &mut Request, env: &Env, id: &str) -> Result<Re
         log_rejection("share_blackout", "scope");
         return Response::error("missing scope: shares:write", 403);
     }
+    let Some(access) = load_share_access(env, id, Some(&user.user_id), Some(&user.email)).await?
+    else {
+        log_rejection("share_blackout", "not_found");
+        return Response::error("not found", 404);
+    };
+    if !access.allows(ShareAction::Blackout) {
+        log_rejection("share_blackout", "not_found");
+        return Response::error("not found", 404);
+    }
+    if !action_is_available_for_plan(env, &access, ShareAction::Blackout, None).await? {
+        log_rejection("share_blackout", "plan");
+        return Response::error("private sharing requires Pro", 402);
+    }
     let input = req.json::<ShareBlackoutInput>().await?;
     let Some(response) = blackout_owned_share(env, &user, id, &input).await? else {
         log_rejection("share_blackout", "not_found");
@@ -644,6 +657,9 @@ async fn blackout_owned_share(
     };
     if !access.allows(ShareAction::Blackout) {
         return Ok(None);
+    }
+    if !action_is_available_for_plan(env, &access, ShareAction::Blackout, None).await? {
+        return Ok(Some(Err("private sharing requires Pro".to_string())));
     }
     let Some(record) = load_share(env, id).await? else {
         return Ok(None);
@@ -783,6 +799,9 @@ async fn public_share(req: &Request, env: &Env, id: &str) -> Result<Response> {
             },
             if anonymous { 401 } else { 404 },
         );
+    }
+    if !action_is_available_for_plan(env, &share_access, ShareAction::Read, None).await? {
+        return Response::error("private sharing requires Pro", 402);
     }
     let Some(record) = load_share(env, id).await? else {
         return Response::error("not found", 404);
@@ -2430,11 +2449,13 @@ mod tests {
     }
 
     #[test]
-    fn active_share_capacity_rejects_exactly_at_the_plan_limit() {
-        assert!(billing_adapter::has_share_capacity(0, 3));
-        assert!(billing_adapter::has_share_capacity(2, 3));
-        assert!(!billing_adapter::has_share_capacity(3, 3));
-        assert!(!billing_adapter::has_share_capacity(101, 100));
+    fn private_share_capacity_rejects_free_and_exactly_at_the_pro_limit() {
+        assert_eq!(billing_adapter::FREE_PRIVATE_SHARE_LIMIT, 0);
+        assert!(!billing_adapter::has_private_share_capacity(0, 0));
+        assert!(billing_adapter::has_private_share_capacity(0, 100));
+        assert!(billing_adapter::has_private_share_capacity(99, 100));
+        assert!(!billing_adapter::has_private_share_capacity(100, 100));
+        assert!(!billing_adapter::has_private_share_capacity(101, 100));
     }
 
     #[test]

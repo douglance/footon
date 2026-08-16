@@ -26,7 +26,9 @@ key cannot issue another key.
 
 Issuance requires Pro. An account can have 20 active keys. Keys expire after 90
 days by default; the issuer can select 1 to 365 days. Revocation takes effect on
-the next request. Expiry and revocation do not depend on an upstream provider.
+the next request. Service keys pause when the owning account no longer has Pro
+and resume if Pro is restored before the key expires. Expiry and revocation do
+not depend on an upstream provider.
 
 ## Issue and use a key
 

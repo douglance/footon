@@ -5,6 +5,12 @@ Versioning and keeps unreleased changes separate from tagged releases.
 
 ## [Unreleased]
 
+### Changed
+
+- Pricing and billing usage now state the product boundary directly: public
+  shares are unlimited and free forever, while private shares require Pro and
+  count against the 100-private-share plan limit.
+
 ## [0.2.0] - 2026-08-15
 
 ### Added

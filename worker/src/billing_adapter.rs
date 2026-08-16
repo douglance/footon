@@ -10,7 +10,7 @@ use crate::billing::{
     normalize_billing_email, verified_billing_update,
 };
 
-pub(crate) const FREE_ACTIVE_SHARE_LIMIT: i32 = 3;
+pub(crate) const FREE_PRIVATE_SHARE_LIMIT: i32 = 0;
 const MAX_WEBHOOK_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,7 +165,7 @@ pub(crate) async fn user_has_private_share_capacity(env: &Env, user_id: &str) ->
         .d1("DB")?
         .prepare(
             "SELECT
-               COUNT(*) AS active_shares,
+               COUNT(*) AS active_private_shares,
                COALESCE((
                  SELECT active_share_limit
                  FROM user_entitlements
@@ -173,7 +173,7 @@ pub(crate) async fn user_has_private_share_capacity(env: &Env, user_id: &str) ->
                    AND plan = 'pro'
                    AND revoked_at IS NULL
                    AND valid_until > ?2
-               ), ?3) AS active_share_limit
+               ), ?3) AS private_share_limit
              FROM shares
              WHERE owner_id = ?1 AND revoked_at IS NULL
                AND general_access = 'restricted'",
@@ -181,17 +181,17 @@ pub(crate) async fn user_has_private_share_capacity(env: &Env, user_id: &str) ->
         .bind_refs(&[
             D1Type::Text(user_id),
             D1Type::Text(&now),
-            D1Type::Integer(FREE_ACTIVE_SHARE_LIMIT),
+            D1Type::Integer(FREE_PRIVATE_SHARE_LIMIT),
         ])?
         .first::<ShareCapacityRow>(None)
         .await?
         .unwrap_or(ShareCapacityRow {
-            active_shares: 0,
-            active_share_limit: i64::from(FREE_ACTIVE_SHARE_LIMIT),
+            active_private_shares: 0,
+            private_share_limit: i64::from(FREE_PRIVATE_SHARE_LIMIT),
         });
-    Ok(has_share_capacity(
-        row.active_shares,
-        row.active_share_limit,
+    Ok(has_private_share_capacity(
+        row.active_private_shares,
+        row.private_share_limit,
     ))
 }
 
@@ -203,7 +203,7 @@ pub(crate) async fn billing_status(env: &Env, user_id: &str) -> Result<Response>
             "SELECT
                (SELECT COUNT(*) FROM shares
                 WHERE owner_id = ?1 AND revoked_at IS NULL
-                  AND general_access = 'restricted') AS active_shares,
+                  AND general_access = 'restricted') AS active_private_shares,
                CASE WHEN EXISTS (
                  SELECT 1 FROM user_entitlements
                  WHERE user_id = ?1 AND plan = 'pro'
@@ -213,7 +213,7 @@ pub(crate) async fn billing_status(env: &Env, user_id: &str) -> Result<Response>
                  SELECT active_share_limit FROM user_entitlements
                  WHERE user_id = ?1 AND plan = 'pro'
                    AND revoked_at IS NULL AND valid_until > ?2
-               ), ?3) AS active_share_limit,
+               ), ?3) AS private_share_limit,
                (SELECT valid_until FROM user_entitlements
                 WHERE user_id = ?1 AND plan = 'pro'
                   AND revoked_at IS NULL AND valid_until > ?2) AS valid_until,
@@ -224,21 +224,23 @@ pub(crate) async fn billing_status(env: &Env, user_id: &str) -> Result<Response>
         .bind_refs(&[
             D1Type::Text(user_id),
             D1Type::Text(&now),
-            D1Type::Integer(FREE_ACTIVE_SHARE_LIMIT),
+            D1Type::Integer(FREE_PRIVATE_SHARE_LIMIT),
         ])?
         .first::<BillingStatusRow>(None)
         .await?
         .unwrap_or(BillingStatusRow {
             plan: "free".to_string(),
-            active_shares: 0,
-            active_share_limit: i64::from(FREE_ACTIVE_SHARE_LIMIT),
+            active_private_shares: 0,
+            private_share_limit: i64::from(FREE_PRIVATE_SHARE_LIMIT),
             valid_until: None,
             customer_portal_url: None,
         });
     let response = BillingStatusResponse {
         plan: row.plan,
-        active_shares: row.active_shares,
-        active_share_limit: row.active_share_limit,
+        active_private_shares: row.active_private_shares,
+        private_share_limit: row.private_share_limit,
+        active_shares: row.active_private_shares,
+        active_share_limit: row.private_share_limit,
         valid_until: row.valid_until,
         customer_portal_url: row
             .customer_portal_url
@@ -256,8 +258,11 @@ fn safe_customer_portal_url(value: &str) -> Option<String> {
     .then(|| url.to_string())
 }
 
-pub(crate) fn has_share_capacity(active_shares: i64, active_share_limit: i64) -> bool {
-    active_shares < active_share_limit
+pub(crate) fn has_private_share_capacity(
+    active_private_shares: i64,
+    private_share_limit: i64,
+) -> bool {
+    active_private_shares < private_share_limit
 }
 
 fn request_is_too_large(req: &Request) -> Result<bool> {
@@ -370,11 +375,11 @@ fn entitlement_statement(
     match &update.entitlement {
         EntitlementProjection::GrantPro {
             valid_until,
-            active_share_limit,
+            private_share_limit,
             source_subscription_id,
             customer_portal_url,
         } => {
-            let active_share_limit = i32::try_from(*active_share_limit).map_err(|_| {
+            let private_share_limit = i32::try_from(*private_share_limit).map_err(|_| {
                 worker::Error::RustError("billing share limit exceeds D1 integer range".to_string())
             })?;
             db.prepare(
@@ -401,7 +406,7 @@ fn entitlement_statement(
             )
             .bind_refs(&[
                 D1Type::Text(&update.user.user_id),
-                D1Type::Integer(active_share_limit),
+                D1Type::Integer(private_share_limit),
                 D1Type::Text(valid_until),
                 optional_text(source_subscription_id.as_deref()),
                 D1Type::Text(&update.receipt.event_id),
@@ -422,7 +427,7 @@ fn entitlement_statement(
                    )",
             )
             .bind_refs(&[
-                D1Type::Integer(FREE_ACTIVE_SHARE_LIMIT),
+                D1Type::Integer(FREE_PRIVATE_SHARE_LIMIT),
                 D1Type::Text(now),
                 D1Type::Text(&update.receipt.event_id),
                 D1Type::Text(&update.user.user_id),
@@ -460,15 +465,15 @@ fn billing_error_code(error: &BillingError) -> &'static str {
 
 #[derive(Deserialize)]
 struct ShareCapacityRow {
-    active_shares: i64,
-    active_share_limit: i64,
+    active_private_shares: i64,
+    private_share_limit: i64,
 }
 
 #[derive(Deserialize)]
 struct BillingStatusRow {
     plan: String,
-    active_shares: i64,
-    active_share_limit: i64,
+    active_private_shares: i64,
+    private_share_limit: i64,
     valid_until: Option<String>,
     customer_portal_url: Option<String>,
 }
@@ -477,6 +482,9 @@ struct BillingStatusRow {
 #[serde(rename_all = "camelCase")]
 struct BillingStatusResponse {
     plan: String,
+    active_private_shares: i64,
+    private_share_limit: i64,
+    // Compatibility aliases retained for clients released before the private-only limit.
     active_shares: i64,
     active_share_limit: i64,
     valid_until: Option<String>,
@@ -507,6 +515,8 @@ mod adapter_tests {
     fn billing_status_uses_the_public_camel_case_contract() {
         let value = serde_json::to_value(BillingStatusResponse {
             plan: "pro".to_string(),
+            active_private_shares: 4,
+            private_share_limit: 100,
             active_shares: 4,
             active_share_limit: 100,
             valid_until: Some("2026-09-01T00:00:00Z".to_string()),
@@ -514,6 +524,8 @@ mod adapter_tests {
         })
         .expect("billing status");
         assert_eq!(value["plan"], "pro");
+        assert_eq!(value["activePrivateShares"], 4);
+        assert_eq!(value["privateShareLimit"], 100);
         assert_eq!(value["activeShares"], 4);
         assert_eq!(value["activeShareLimit"], 100);
         assert_eq!(value["validUntil"], "2026-09-01T00:00:00Z");

@@ -243,11 +243,15 @@ pub(crate) async fn request_viewer_code(
 
     if let Some(email) = email {
         let user_id = format!("email:{email}");
-        let authorized = load_share_access(env, share_id, Some(&user_id), Some(&email))
-            .await?
-            .is_some_and(|access| {
-                access.general_access == GeneralAccess::Private && access.allows(ShareAction::Read)
-            });
+        let authorized = if let Some(access) =
+            load_share_access(env, share_id, Some(&user_id), Some(&email)).await?
+        {
+            access.general_access == GeneralAccess::Private
+                && access.allows(ShareAction::Read)
+                && action_is_available_for_plan(env, &access, ShareAction::Read, None).await?
+        } else {
+            false
+        };
         if authorized {
             let code = crate::email_code();
             let created_at = crate::now_string();
@@ -498,6 +502,41 @@ pub(crate) const fn allows(
     }
 }
 
+#[must_use]
+pub(crate) const fn requires_active_pro(
+    current_access: GeneralAccess,
+    action: ShareAction,
+    resulting_access: Option<GeneralAccess>,
+) -> bool {
+    if matches!(current_access, GeneralAccess::Public) {
+        return false;
+    }
+    match action {
+        ShareAction::Revoke => false,
+        ShareAction::ChangeAccess => !matches!(resulting_access, Some(GeneralAccess::Public)),
+        ShareAction::Read
+        | ShareAction::Rename
+        | ShareAction::Blackout
+        | ShareAction::ViewAccess
+        | ShareAction::ManageViewer
+        | ShareAction::ManageEditor
+        | ShareAction::Transfer => true,
+    }
+}
+
+pub(crate) async fn action_is_available_for_plan(
+    env: &Env,
+    access: &ShareAccess,
+    action: ShareAction,
+    resulting_access: Option<GeneralAccess>,
+) -> Result<bool> {
+    if requires_active_pro(access.general_access, action, resulting_access) {
+        crate::user_is_pro(env, &access.owner_id).await
+    } else {
+        Ok(true)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -530,6 +569,45 @@ mod tests {
             );
         }
         assert!(!allows(GeneralAccess::Private, None, ShareAction::Read));
+    }
+
+    #[test]
+    fn private_access_pauses_without_pro_but_publicize_and_revoke_remain_available() {
+        assert!(!requires_active_pro(
+            GeneralAccess::Public,
+            ShareAction::Read,
+            None
+        ));
+        assert!(requires_active_pro(
+            GeneralAccess::Private,
+            ShareAction::Read,
+            None
+        ));
+        assert!(requires_active_pro(
+            GeneralAccess::Private,
+            ShareAction::Blackout,
+            None
+        ));
+        assert!(requires_active_pro(
+            GeneralAccess::Private,
+            ShareAction::Rename,
+            None
+        ));
+        assert!(requires_active_pro(
+            GeneralAccess::Private,
+            ShareAction::ChangeAccess,
+            Some(GeneralAccess::Private)
+        ));
+        assert!(!requires_active_pro(
+            GeneralAccess::Private,
+            ShareAction::ChangeAccess,
+            Some(GeneralAccess::Public)
+        ));
+        assert!(!requires_active_pro(
+            GeneralAccess::Private,
+            ShareAction::Revoke,
+            None
+        ));
     }
 
     #[test]

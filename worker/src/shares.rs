@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use worker::d1::{D1PreparedStatement, D1Type};
 use worker::{Env, Request, Response, Result};
 
-use crate::access::{GeneralAccess, ShareAccess, ShareAction, ShareRole, load_share_access};
+use crate::access::{
+    GeneralAccess, ShareAccess, ShareAction, ShareRole, action_is_available_for_plan,
+    load_share_access,
+};
 
 const MAX_NAMED_MEMBERS: i64 = 50;
 
@@ -128,6 +131,9 @@ pub(crate) async fn api_access(req: &Request, env: &Env, id: &str) -> Result<Res
     if !access.allows(ShareAction::ViewAccess) {
         return Response::error("not found", 404);
     }
+    if !action_is_available_for_plan(env, &access, ShareAction::ViewAccess, None).await? {
+        return Response::error("private sharing requires Pro", 402);
+    }
     let actor_role = access
         .role
         .ok_or_else(|| worker::Error::RustError("missing actor role".to_string()))?;
@@ -189,6 +195,22 @@ pub(crate) async fn api_update(req: &mut Request, env: &Env, id: &str) -> Result
         return Response::error("title must contain 1 to 160 characters", 400);
     }
     let general_access = input.general_access.unwrap_or(access.general_access);
+    if input.title.is_some()
+        && !action_is_available_for_plan(env, &access, ShareAction::Rename, None).await?
+    {
+        return Response::error("private sharing requires Pro", 402);
+    }
+    if input.general_access.is_some()
+        && !action_is_available_for_plan(
+            env,
+            &access,
+            ShareAction::ChangeAccess,
+            Some(general_access),
+        )
+        .await?
+    {
+        return Response::error("private sharing requires Pro", 402);
+    }
     if general_access == GeneralAccess::Private && access.general_access == GeneralAccess::Public {
         if !crate::private_expansion_enabled(env) {
             return Response::error("private sharing is temporarily unavailable", 503);
@@ -302,6 +324,9 @@ pub(crate) async fn api_grant(req: &mut Request, env: &Env, id: &str) -> Result<
     };
     if !access.allows(action) {
         return Response::error("not found", 404);
+    }
+    if !action_is_available_for_plan(env, &access, action, None).await? {
+        return Response::error("private sharing requires Pro", 402);
     }
     if !crate::private_expansion_enabled(env) {
         return Response::error("private sharing is temporarily unavailable", 503);
@@ -433,6 +458,9 @@ pub(crate) async fn api_remove_member(
     if !access.allows(action) {
         return Response::error("not found", 404);
     }
+    if !action_is_available_for_plan(env, &access, action, None).await? {
+        return Response::error("private sharing requires Pro", 402);
+    }
     env.d1("DB")?
         .prepare(
             "DELETE FROM share_members WHERE id = ?1 AND share_id = ?2 AND EXISTS (
@@ -555,7 +583,7 @@ pub(crate) async fn tool_access(
     }
     let input = serde_json::from_value::<Input>(args)?;
     crate::validate_share_id(&input.id)?;
-    let access = required_action(env, user, &input.id, ShareAction::ViewAccess).await?;
+    let access = required_action(env, user, &input.id, ShareAction::ViewAccess, None).await?;
     let members = env
         .d1("DB")?
         .prepare(
@@ -602,9 +630,16 @@ pub(crate) async fn tool_update(
     } else {
         ShareAction::Rename
     };
-    let access = required_action(env, user, &input.id, action).await?;
+    let access = required_action(env, user, &input.id, action, input.general_access).await?;
     if input.title.is_some() && !access.allows(ShareAction::Rename) {
         return Err(worker::Error::RustError("share not found".to_string()));
+    }
+    if input.title.is_some()
+        && !action_is_available_for_plan(env, &access, ShareAction::Rename, None).await?
+    {
+        return Err(worker::Error::RustError(
+            "private sharing requires Pro".to_string(),
+        ));
     }
     let record = crate::load_share(env, &input.id)
         .await?
@@ -714,7 +749,7 @@ pub(crate) async fn tool_grant(
     } else {
         ShareAction::ManageViewer
     };
-    let access = required_action(env, user, &input.id, action).await?;
+    let access = required_action(env, user, &input.id, action, None).await?;
     if access.general_access != GeneralAccess::Private {
         return Err(worker::Error::RustError(
             "members require a private share".to_string(),
@@ -841,6 +876,7 @@ pub(crate) async fn tool_remove(
         } else {
             ShareAction::ManageViewer
         },
+        None,
     )
     .await?;
     let result = env
@@ -882,7 +918,7 @@ pub(crate) async fn tool_transfer(
     crate::validate_share_id(&input.id)?;
     let target_email = crate::normalize_email(&input.email)
         .ok_or_else(|| worker::Error::RustError("valid email is required".to_string()))?;
-    let access = required_action(env, user, &input.id, ShareAction::Transfer).await?;
+    let access = required_action(env, user, &input.id, ShareAction::Transfer, None).await?;
     if target_email == user.email {
         return Err(worker::Error::RustError(
             "target already owns this share".to_string(),
@@ -949,15 +985,20 @@ async fn required_action(
     user: &crate::AuthUser,
     id: &str,
     action: ShareAction,
+    resulting_access: Option<GeneralAccess>,
 ) -> Result<ShareAccess> {
     let access = actor_access(env, id, user)
         .await?
         .ok_or_else(|| worker::Error::RustError("share not found".to_string()))?;
-    if access.allows(action) {
-        Ok(access)
-    } else {
-        Err(worker::Error::RustError("share not found".to_string()))
+    if !access.allows(action) {
+        return Err(worker::Error::RustError("share not found".to_string()));
     }
+    if !action_is_available_for_plan(env, &access, action, resulting_access).await? {
+        return Err(worker::Error::RustError(
+            "private sharing requires Pro".to_string(),
+        ));
+    }
+    Ok(access)
 }
 
 async fn require_private_capacity(env: &Env, owner_id: &str) -> Result<()> {
