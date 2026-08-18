@@ -48,6 +48,7 @@ use ui::thread::{VIEWER_JS, viewer_page};
 
 const STYLE: &str = include_str!(concat!(env!("OUT_DIR"), "/tailwind.css"));
 const ICON: &str = include_str!("../../assets/footon-icon.svg");
+const FONT: &[u8] = include_bytes!("../../assets/departure-mono-1.500.woff2");
 const ORIGIN: &str = "https://footon.dev";
 const ACCESS_TTL_SECONDS: i64 = 3_600;
 const REFRESH_TTL_SECONDS: i64 = 2_592_000;
@@ -61,7 +62,7 @@ const REMOTE_REPORT_RETENTION_SECONDS: i64 = 2_592_000;
 const MCP_INITIALIZE_PROTOCOL_VERSIONS: [&str; 4] =
     ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
 const ROBOTS: &str = "User-agent: *\nAllow: /\n";
-const PUBLIC_GET_ROUTES: [&str; 17] = [
+const PUBLIC_GET_ROUTES: [&str; 18] = [
     "/healthz",
     "/",
     "/privacy",
@@ -75,6 +76,7 @@ const PUBLIC_GET_ROUTES: [&str; 17] = [
     "/viewer.js",
     "/landing.js",
     "/favicon.svg",
+    "/fonts/departure-mono-1.500.woff2",
     "/.well-known/oauth-authorization-server",
     "/.well-known/oauth-protected-resource/mcp",
     "/authorize",
@@ -326,6 +328,7 @@ async fn public_get(
         "/viewer.js" => javascript_response(VIEWER_JS)?,
         "/landing.js" => javascript_response(LANDING_JS)?,
         "/favicon.svg" => svg_response(ICON)?,
+        "/fonts/departure-mono-1.500.woff2" => font_response(FONT)?,
         "/.well-known/oauth-authorization-server" => {
             json_response(&authorization_server_metadata())?
         }
@@ -2177,6 +2180,18 @@ fn svg_response(svg: &str) -> Result<Response> {
     Ok(response)
 }
 
+fn font_response(font: &[u8]) -> Result<Response> {
+    let mut response = Response::from_bytes(font.to_vec())?;
+    response.headers_mut().set("Content-Type", "font/woff2")?;
+    response
+        .headers_mut()
+        .set("Cache-Control", "public, max-age=31536000, immutable")?;
+    response
+        .headers_mut()
+        .set("X-Content-Type-Options", "nosniff")?;
+    Ok(response)
+}
+
 fn log_rejection(operation: &str, reason: &str) {
     worker::console_error!("operation={operation} result=rejected reason={reason}");
 }
@@ -2201,7 +2216,7 @@ fn internal_error(_error: &worker::Error) -> Result<Response> {
 }
 
 fn security_headers(response: &mut Response) -> Result<()> {
-    response.headers_mut().set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")?;
+    response.headers_mut().set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")?;
     response
         .headers_mut()
         .set("Referrer-Policy", "no-referrer")?;
@@ -2410,6 +2425,7 @@ mod tests {
             "/viewer.js",
             "/landing.js",
             "/favicon.svg",
+            "/fonts/departure-mono-1.500.woff2",
             "/.well-known/oauth-authorization-server",
             "/.well-known/oauth-protected-resource/mcp",
             "/authorize",
@@ -2687,7 +2703,7 @@ mod tests {
         assert_eq!(
             document
                 .select(&selector(
-                    "script[src=\"/viewer.js?v=20260815-commercial-a11y-2\"]",
+                    "script[src=\"/viewer.js?v=20260818-departure-mono\"]",
                 ))
                 .count(),
             1
@@ -2738,7 +2754,7 @@ mod tests {
                 .select(&selector("link[rel=stylesheet]"))
                 .next()
                 .and_then(|node| node.value().attr("href")),
-            Some("/style.css?v=20260815-commercial-a11y-2")
+            Some("/style.css?v=20260818-departure-mono")
         );
     }
 
@@ -2769,7 +2785,7 @@ mod tests {
         assert_eq!(
             document
                 .select(&selector(
-                    "script[src='/landing.js?v=20260815-commercial-a11y-2']",
+                    "script[src='/landing.js?v=20260818-departure-mono']",
                 ))
                 .count(),
             1
@@ -3002,14 +3018,14 @@ mod tests {
                 .select(&selector("link[rel=stylesheet]"))
                 .next()
                 .and_then(|node| node.value().attr("href")),
-            Some("/style.css?v=20260815-commercial-a11y-2")
+            Some("/style.css?v=20260818-departure-mono")
         );
         assert_eq!(
             document
                 .select(&selector("script[src]"))
                 .next()
                 .and_then(|node| node.value().attr("src")),
-            Some("/viewer.js?v=20260815-commercial-a11y-2")
+            Some("/viewer.js?v=20260818-departure-mono")
         );
     }
 
@@ -3098,6 +3114,8 @@ mod tests {
     fn assert_viewer_assets() {
         let theme = include_str!("theme.css");
         for contract in [
+            "src: url(\"/fonts/departure-mono-1.500.woff2\") format(\"woff2\");",
+            "font: 13px/1.5 \"Departure Mono\", ui-monospace,",
             "grid-template-columns: 44px 72px minmax(0, 1fr)",
             "padding: 7px 0 8px 0;",
             "--document-width: calc(140px + 80ch);",

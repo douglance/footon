@@ -1,3 +1,14 @@
+/* Departure Mono 1.500 by Helena Zhang, licensed under the SIL Open Font
+   License 1.1. The file is served by the worker from /fonts/departure-mono-1.500.woff2
+   and its license text lives in assets/departure-mono-LICENSE.txt. */
+@font-face {
+  font-family: "Departure Mono";
+  src: url("/fonts/departure-mono-1.500.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   --bg: #090c0a;
@@ -21,7 +32,7 @@ body {
   overflow-x: hidden;
   background: var(--bg);
   color: var(--ink);
-  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 13px/1.5 "Departure Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }

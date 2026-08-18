@@ -7,6 +7,9 @@ Versioning and keeps unreleased changes separate from tagged releases.
 
 ### Changed
 
+- The site now renders in Departure Mono, bundled as a WOFF2 file the worker
+  serves from `/fonts/departure-mono-1.500.woff2`, with the previous system
+  monospace stack kept as the fallback.
 - Pricing and billing usage now state the product boundary directly: public
   shares are unlimited and free forever, while private shares require Pro and
   count against the 100-private-share plan limit.
