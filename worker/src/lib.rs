@@ -2703,7 +2703,7 @@ mod tests {
         assert_eq!(
             document
                 .select(&selector(
-                    "script[src=\"/viewer.js?v=20260818-departure-mono\"]",
+                    "script[src=\"/viewer.js?v=20260818-viewer-glass-band\"]",
                 ))
                 .count(),
             1
@@ -2754,7 +2754,7 @@ mod tests {
                 .select(&selector("link[rel=stylesheet]"))
                 .next()
                 .and_then(|node| node.value().attr("href")),
-            Some("/style.css?v=20260818-departure-mono")
+            Some("/style.css?v=20260818-viewer-glass-band")
         );
     }
 
@@ -2785,7 +2785,7 @@ mod tests {
         assert_eq!(
             document
                 .select(&selector(
-                    "script[src='/landing.js?v=20260818-departure-mono']",
+                    "script[src='/landing.js?v=20260818-viewer-glass-band']",
                 ))
                 .count(),
             1
@@ -3018,14 +3018,14 @@ mod tests {
                 .select(&selector("link[rel=stylesheet]"))
                 .next()
                 .and_then(|node| node.value().attr("href")),
-            Some("/style.css?v=20260818-departure-mono")
+            Some("/style.css?v=20260818-viewer-glass-band")
         );
         assert_eq!(
             document
                 .select(&selector("script[src]"))
                 .next()
                 .and_then(|node| node.value().attr("src")),
-            Some("/viewer.js?v=20260818-departure-mono")
+            Some("/viewer.js?v=20260818-viewer-glass-band")
         );
     }
 
@@ -3115,17 +3115,19 @@ mod tests {
         let theme = include_str!("theme.css");
         for contract in [
             "src: url(\"/fonts/departure-mono-1.500.woff2\") format(\"woff2\");",
-            "font: 13px/1.5 \"Departure Mono\", ui-monospace,",
-            "grid-template-columns: 44px 72px minmax(0, 1fr)",
+            "font: 17.5px/1.5 \"Departure Mono\", ui-monospace,",
+            "grid-template-columns: 56px 88px minmax(0, 1fr)",
             "padding: 7px 0 8px 0;",
-            "--document-width: calc(140px + 80ch);",
-            "max-width: 80ch;",
+            "--document-width: calc(168px + 120ch);",
+            "max-width: 120ch;",
             ".minimap-frame",
+            "inset-inline: auto var(--minimap-margin);",
+            "--minimap-rail: 12px;",
+            "--minimap-margin: 10px;",
+            "width: var(--minimap-rail);",
             "color-scheme: dark",
             "[hidden] { display: none !important; }",
             "z-index: 20;",
-            "width: 24px;",
-            "width: 6px;",
             "touch-action: none;",
             ".message:hover, .message:focus-within",
             ".viewer:has(.thread-view-toggle:checked)",

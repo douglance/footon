@@ -20,7 +20,6 @@ function initializeViewer(viewer) {
   const texture = document.createElement("canvas");
   const textureContext = texture.getContext("2d", { alpha: true });
   let scale = 1;
-  let frame = 0;
   let dragging = false;
 
   function viewportHeight() {
@@ -43,23 +42,8 @@ function initializeViewer(viewer) {
 
   function render() {
     const height = map.clientHeight;
-    const viewport = Math.min(height, viewportHeight() * scale);
-    const top = Math.min(
-      height - viewport,
-      Math.max(0, scrollTop() * scale),
-    );
     context.clearRect(0, 0, map.clientWidth, height);
     context.drawImage(texture, 0, 0, map.clientWidth, height);
-    context.fillStyle = "rgba(255,255,255,.2)";
-    context.fillRect(0, top, map.clientWidth, viewport);
-  }
-
-  function schedule() {
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      render();
-    });
   }
 
   function layout() {
@@ -77,15 +61,26 @@ function initializeViewer(viewer) {
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     textureContext.setTransform(ratio, 0, 0, ratio, 0, 0);
     textureContext.clearRect(0, 0, width, height);
+    // The rail reads as evenly spaced dots rather than one solid line: a long
+    // thread packs more messages than the rail has room for, so each slot keeps
+    // one — the user turn if the slot holds one, otherwise the first message in
+    // it, which leaves the mix of agent and tool colors intact.
+    const radius = Math.max(1.5, Math.min(2.5, width / 5));
+    const spacing = radius * 3;
+    const slots = new Map();
     for (const { marker, message } of targets) {
       if (!message || message.hidden) continue;
+      const center = (messageTop(message) + message.offsetHeight / 2) * scale;
+      const slot = Math.round(center / spacing);
+      const rank = marker.classList.contains("user") ? 2 : 1;
+      const held = slots.get(slot);
+      if (!held || rank > held.rank) slots.set(slot, { rank, marker });
+    }
+    for (const [slot, { marker }] of slots) {
       textureContext.fillStyle = getComputedStyle(marker).backgroundColor;
-      textureContext.fillRect(
-        1,
-        messageTop(message) * scale,
-        Math.max(1, width - 2),
-        Math.max(1, message.offsetHeight * scale),
-      );
+      textureContext.beginPath();
+      textureContext.arc(width / 2, slot * spacing, radius, 0, Math.PI * 2);
+      textureContext.fill();
     }
     render();
     rail.classList.add("enhanced");
@@ -180,10 +175,7 @@ function initializeViewer(viewer) {
   });
   rail?.prepend(canvas);
   for (const filter of filters) filter.addEventListener("change", applyFilters);
-  scrollTarget.addEventListener("scroll", () => {
-    updateScrollbarValue();
-    schedule();
-  }, { passive: true });
+  scrollTarget.addEventListener("scroll", updateScrollbarValue, { passive: true });
   addEventListener("resize", layout);
   addEventListener("load", layout, { once: true });
   applyFilters();

@@ -282,7 +282,6 @@ async fn thread_minimap(messages: &[Message]) -> Result {
     view! {
         <div class="minimap-frame">
             <nav class="minimap" aria-label="Thread minimap">
-                <div class="map-viewport" aria-hidden="true"></div>
                 <ol>
                     for (index, message) in messages.iter().enumerate() {
                         minimap_marker(message: message, index: index)
