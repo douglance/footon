@@ -1388,9 +1388,9 @@ dependencies = [
 
 [[package]]
 name = "incurs"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b2960140c628ca50aa2c54974cc0c2d8ebc76d63e135586431c952173942636"
+checksum = "470fcb6704c988f393cff1406cce0c2879b81255c6efa022ff65c1b85045a687"
 dependencies = [
  "async-stream",
  "async-trait",
