@@ -13,7 +13,7 @@ keywords = ["agents", "privacy", "redaction", "sharing", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 blake3 = "1.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 footon-core = { version = "=0.2.0", path = "../crates/footon-core" }
