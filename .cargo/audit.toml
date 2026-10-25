@@ -1,0 +1,10 @@
+# cargo audit configuration (read by `cargo audit` in npm run audit).
+[advisories]
+ignore = [
+  # zvariant / zbus_names / zvariant_derive are unmaintained: merged into zbus 6.
+  # They reach us only through keyring -> secret-service -> zbus 5 (Linux
+  # Secret Service backend). Remove these once keyring moves to zbus 6.
+  "RUSTSEC-2026-0370",
+  "RUSTSEC-2026-0371",
+  "RUSTSEC-2026-0372",
+]

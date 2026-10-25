@@ -22,6 +22,9 @@
     "verify:release": "npm run check && npm run audit && npm run package:verify"
   },
   "devDependencies": {
-    "wrangler": "^4.122.0"
+    "wrangler": "^4.151.3"
+  },
+  "overrides": {
+    "undici": "7.30.1"
   }
 }
