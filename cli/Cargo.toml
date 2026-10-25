@@ -17,7 +17,7 @@ base64 = "0.22"
 blake3 = "1.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 footon-core = { version = "=0.2.0", path = "../crates/footon-core" }
-incurs = { version = "=0.5.2", default-features = false, features = ["cli", "mcp"] }
+incurs = { version = "=0.5.3", default-features = false, features = ["cli", "mcp"] }
 keyring = "4.1.6"
 rand = "0.8"
 redact-core = "=0.9.1"
